@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WebRTC audio spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+    margin: 0; padding: 2rem; max-width: 46rem;
+  }
+  h1 { font-size: 1.1rem; margin: 0 0 .25rem; }
+  p.sub { margin: 0 0 1.5rem; opacity: .65; }
+  button {
+    font: inherit; padding: .5rem 1.1rem; border-radius: .4rem;
+    border: 1px solid currentColor; background: transparent; cursor: pointer;
+  }
+  button[disabled] { opacity: .4; cursor: default; }
+  #state { margin-left: .75rem; font-variant: small-caps; opacity: .8; }
+  #log {
+    margin-top: 1.25rem; padding: .75rem 1rem; border-radius: .4rem;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+    font-family: ui-monospace, monospace; font-size: 12px;
+    white-space: pre-wrap; max-height: 24rem; overflow-y: auto;
+  }
+  #meter { width: 100%; height: 6px; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>WebRTC audio spike</h1>
+<p class="sub">Mic → one audio track → aiortc. The server does the measuring; this page just sends audio.</p>
+
+<button id="start">Start mic</button>
+<button id="stop" disabled>Stop</button>
+<span id="state">idle</span>
+<meter id="meter" min="0" max="1" value="0"></meter>
+
+<div id="log"></div>
+
+<script>
+const $log = document.getElementById('log');
+const $state = document.getElementById('state');
+const $start = document.getElementById('start');
+const $stop = document.getElementById('stop');
+const $meter = document.getElementById('meter');
+
+const t0 = performance.now();
+function log(msg) {
+  const at = ((performance.now() - t0) / 1000).toFixed(3).padStart(7);
+  $log.textContent += `[${at}s] ${msg}\n`;
+  $log.scrollTop = $log.scrollHeight;
+  console.log('[spike]', msg);
+}
+
+let pc, stream, audioCtx, rafId;
+
+// Wait for ICE gathering to finish so the offer carries all candidates and we
+// need no trickle channel. Keeps the signalling to exactly one POST.
+function waitForIceGathering(pc) {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(resolve => {
+    const check = () => {
+      if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', check);
+        resolve();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', check);
+  });
+}
+
+// ?dtx=1 — ask Opus to stop sending during silence, so the spike can see
+// whether pts develops gaps. Off by default, which is Chrome's default too.
+function enableDtx(sdp) {
+  const payloads = [...sdp.matchAll(/^a=rtpmap:(\d+) opus\//gm)].map(m => m[1]);
+  return sdp.split(/\r?\n/).map(line => {
+    const m = line.match(/^a=fmtp:(\d+) (.*)$/);
+    if (m && payloads.includes(m[1]) && !m[2].includes('usedtx')) {
+      return `a=fmtp:${m[1]} ${m[2]};usedtx=1`;
+    }
+    return line;
+  }).join('\r\n');
+}
+
+function levelMeter(stream) {
+  audioCtx = new AudioContext();
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  audioCtx.createMediaStreamSource(stream).connect(analyser);
+  const buf = new Uint8Array(analyser.fftSize);
+  const tick = () => {
+    analyser.getByteTimeDomainData(buf);
+    let peak = 0;
+    for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
+    $meter.value = peak;
+    rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+async function start() {
+  $start.disabled = true;
+  $state.textContent = 'starting';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const track = stream.getAudioTracks()[0];
+    log(`got mic: "${track.label}" ${JSON.stringify(track.getSettings())}`);
+    levelMeter(stream);
+
+    pc = new RTCPeerConnection();
+    pc.addEventListener('connectionstatechange', () => {
+      log(`connection: ${pc.connectionState}`);
+      $state.textContent = pc.connectionState;
+    });
+    pc.addEventListener('iceconnectionstatechange', () => log(`ice: ${pc.iceConnectionState}`));
+
+    // Send only. Nothing comes back in this spike.
+    pc.addTransceiver(track, { direction: 'sendonly', streams: [stream] });
+
+    let offer = await pc.createOffer();
+    if (new URLSearchParams(location.search).has('dtx')) {
+      offer = { type: offer.type, sdp: enableDtx(offer.sdp) };
+      log('DTX requested (usedtx=1)');
+    }
+    await pc.setLocalDescription(offer);
+    await waitForIceGathering(pc);
+    log('ice gathering complete, POSTing offer');
+
+    const tPost = performance.now();
+    const res = await fetch('/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sdp: pc.localDescription.sdp,
+        type: pc.localDescription.type,
+      }),
+    });
+    const answer = await res.json();
+    log(`answer received in ${(performance.now() - tPost).toFixed(1)} ms`);
+    await pc.setRemoteDescription(answer);
+    log('remote description set — sending audio');
+    $stop.disabled = false;
+  } catch (err) {
+    log(`ERROR: ${err.name}: ${err.message}`);
+    $state.textContent = 'failed';
+    $start.disabled = false;
+  }
+}
+
+function stop() {
+  $stop.disabled = true;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (audioCtx) audioCtx.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (pc) pc.close();
+  $state.textContent = 'stopped';
+  log('stopped');
+  $start.disabled = false;
+}
+
+$start.addEventListener('click', start);
+$stop.addEventListener('click', stop);
+
+// ?autostart=1 — used by drive_headless.py
+if (new URLSearchParams(location.search).has('autostart')) start();
+</script>
+</body>
+</html>
