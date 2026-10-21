@@ -1,0 +1,34 @@
+{
+  "name": "aicc-postgres-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "plugin.name": "pgoutput",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "debezium",
+    "database.password": "debezium",
+    "database.dbname": "aicc",
+
+    "topic.prefix": "cdc",
+    "schema.include.list": "acme,swiftnet",
+
+    "publication.name": "dbz_aicc",
+    "publication.autocreate.mode": "disabled",
+    "slot.name": "dbz_aicc",
+    "snapshot.mode": "initial",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "topic.creation.default.replication.factor": "1",
+    "topic.creation.default.partitions": "1",
+    "topic.creation.default.cleanup.policy": "compact",
+    "topic.creation.default.message.timestamp.type": "LogAppendTime",
+
+    "tombstones.on.delete": "true",
+    "time.precision.mode": "connect",
+    "heartbeat.interval.ms": "60000"
+  }
+}

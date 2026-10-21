@@ -1,0 +1,327 @@
+# The data stack. One file, started in layers with profiles:
+#
+#   docker compose -f data/docker-compose.yml up -d --wait                  # core: Kafka, registry, UI
+#   docker compose -f data/docker-compose.yml --profile all up -d --wait    # everything
+#   docker compose -f data/docker-compose.yml --profile spark up -d --wait  # core + lake + spark
+#   data/setup.sh                                                           # topics, schemas, bucket, CDC
+#
+# Profiles: db (Postgres) · lake (SeaweedFS S3) · cdc (Debezium) · spark ·
+# airflow · obs (Grafana) · all. Each service lists every profile that needs
+# it, so `--profile airflow` brings Postgres, the lake and Spark along.
+#
+# Single Kafka broker on purpose: step 3b adds kafka-2/kafka-3 for replication
+# (DDIA ch.5) and a 3-voter KRaft quorum (ch.9). Every replication setting is 1
+# until then. See DDIA.md §10–11.
+#
+# Built to move to k3s (BIG-DATA.md §9): images pinned, config from env, no
+# host paths for state, a health check and a memory limit on everything.
+# The limits are the numbers a k8s `resources.limits.memory` will need.
+#
+# Ports (around RUNNING.md: 8080-8083 are the voice stack, 5432 a host Postgres):
+#   9092  Kafka (host clients)        8085  Schema Registry     8090  Kafka UI
+#   5433  Postgres                    8333  S3 (SeaweedFS)      9333  SeaweedFS master UI
+#   8084  Kafka Connect REST          15002 Spark Connect       4040  Spark UI
+#   8095  Airflow                     3000  Grafana
+#
+# Credentials below are DEV DEFAULTS, overridable from data/.env (gitignored).
+#
+# RAM with --profile all, measured idle: see RUNNING.md "Data stack".
+
+name: aicc-data
+
+services:
+  kafka-1:
+    image: apache/kafka:4.3.1
+    container_name: kafka-1
+    hostname: kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft combined mode: this node is both broker and controller (Raft voter).
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Fixed so the volume survives `down`/`up`. A new ID on an old log dir
+      # refuses to start — the cluster ID is how a node knows its data is its own.
+      # Generated once with `kafka-storage.sh random-uuid`; every node shares it.
+      CLUSTER_ID: _aRmI49BRuC5KRAKE9mlBQ
+
+      # Two client listeners, because "localhost:9092" means a different machine
+      # depending on who asks. Containers dial kafka-1:19092; the host dials
+      # localhost:9092. A broker hands clients its ADVERTISED address after the
+      # first connection, so getting this wrong works once, then fails.
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # A typo in a topic name must fail, not silently create a new topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xms384m -Xmx384m"
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-1:19092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 15s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:8.2.0
+    container_name: schema-registry
+    hostname: schema-registry
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+    ports:
+      - "8085:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      # The registry stores schemas in a Kafka topic (_schemas) — it is itself a
+      # derived view of a log (DDIA ch.12), rebuilt by replaying that topic.
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka-1:19092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      # Default for every subject: a new version must be backward AND forward
+      # compatible with ALL previous versions. DDIA.md §3.
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: full_transitive
+      SCHEMA_REGISTRY_HEAP_OPTS: "-Xms256m -Xmx256m"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: aicc
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092
+      # With the registry wired in, the UI decodes our Protobuf records
+      # instead of showing bytes.
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      DYNAMIC_CONFIG_ENABLED: "false"
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+    mem_limit: 512m
+
+  # ── operational database ─────────────────────────────────────────────────
+  # System of record for tenant business data (shipments, lines), Airflow's
+  # metadata, and later the derived analytics tables. wal_level=logical is what
+  # lets Debezium read the write-ahead log as a change stream (DDIA ch.11).
+  postgres:
+    image: postgres:18
+    container_name: postgres
+    hostname: postgres
+    profiles: [db, cdc, airflow, obs, all]
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=8
+      - -c
+      - max_wal_senders=8
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so
+      # the volume mounts the parent — the layout pg_upgrade expects.
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aicc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 512m
+
+  # ── object storage (the lake) ────────────────────────────────────────────
+  # S3-compatible. MinIO stopped publishing community images in 2025; Spark's
+  # s3a connector cannot tell the difference. On Databricks this role is
+  # played by the cloud bucket behind Unity Catalog.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.00
+    container_name: seaweedfs
+    hostname: seaweedfs
+    profiles: [lake, spark, airflow, all]
+    ports:
+      - "8333:8333"   # S3 API
+      - "9333:9333"   # master UI
+    command: >
+      server -dir=/data -ip=seaweedfs -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=1024 -volume.max=50
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - seaweedfs-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 512m
+
+  # ── change data capture ──────────────────────────────────────────────────
+  # Kafka Connect with the Debezium connectors. Turns every committed row
+  # change in acme.* / swiftnet.* into a record on cdc.<schema>.<table>.
+  # The connector itself is registered by data/connect/register.sh.
+  connect:
+    image: quay.io/debezium/connect:3.5
+    container_name: connect
+    hostname: connect
+    profiles: [cdc, all]
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8084:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka-1:19092
+      GROUP_ID: aicc-connect
+      # Connect keeps its own state in Kafka topics — configs, source offsets
+      # (how far into the WAL it has read), task status. Restart-safe because
+      # of these, not because of anything on local disk.
+      CONFIG_STORAGE_TOPIC: _connect_configs
+      OFFSET_STORAGE_TOPIC: _connect_offsets
+      STATUS_STORAGE_TOPIC: _connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/ > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    mem_limit: 900m
+
+  # ── compute ──────────────────────────────────────────────────────────────
+  # A Spark Connect server: Spark runs here (local[4]), clients send DataFrame
+  # plans over gRPC from anywhere — the venv, Airflow, a notebook. The same
+  # model as Databricks Connect, which is the point.
+  spark:
+    build: ./spark
+    image: aicc/spark:4.2.0
+    container_name: spark
+    hostname: spark
+    profiles: [spark, airflow, all]
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    ports:
+      - "15002:15002"   # Spark Connect
+      - "4040:4040"     # Spark UI (jobs, stages, streaming queries)
+    environment:
+      SPARK_NO_DAEMONIZE: "1"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lake}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lake-secret-key}
+    volumes:
+      - spark-work:/opt/spark/work-dir
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/15002'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: 2g
+
+  # ── orchestration ────────────────────────────────────────────────────────
+  # `airflow standalone`: api-server, scheduler, dag-processor and triggerer in
+  # one container, LocalExecutor, metadata in Postgres. Fine for a laptop; on
+  # k3s the official Helm chart splits these into separate pods.
+  airflow:
+    build: ./airflow
+    image: aicc/airflow:3.2.0
+    container_name: airflow
+    hostname: airflow
+    profiles: [airflow, all]
+    command: standalone
+    depends_on:
+      postgres:
+        condition: service_healthy
+      spark:
+        condition: service_healthy
+    ports:
+      - "8095:8080"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+      # Dev only: no login screen. Never on a shared cluster.
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
+      SPARK_REMOTE: sc://spark:15002
+      KAFKA_BOOTSTRAP: kafka-1:19092
+      PII_PEPPER: ${PII_PEPPER:-dev-pepper-change-me}
+      PYTHONPATH: /opt/aicc
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro,z
+      - ./spark/jobs:/opt/aicc/jobs:ro,z
+      - ./gen:/opt/aicc/gen:ro,z
+      - airflow-logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v2/monitor/health > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    mem_limit: 2g
+
+  # ── dashboards ───────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:12.3.0
+    container_name: grafana
+    hostname: grafana
+    profiles: [obs, all]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    mem_limit: 256m
+
+volumes:
+  kafka-1-data:
+  postgres-data:
+  seaweedfs-data:
+  spark-work:
+  airflow-logs:
+  grafana-data:

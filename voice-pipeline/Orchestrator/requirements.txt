@@ -1,0 +1,20 @@
+# Orchestrator Service dependencies
+# NOTE: the original repo's requirements.txt was a corrupted system pip-freeze.
+# This is the real dependency set (from requirements-phase1.txt).
+
+# Core framework & async
+fastapi==0.135.3
+uvicorn==0.34.0
+websockets==14.1
+pydantic==2.10.5
+pydantic-settings==2.6.1
+
+# External service clients
+groq==1.1.2
+
+# Redis (session state externalization: history + mailbox)
+redis==5.2.1
+
+# Utilities
+python-dotenv==1.0.1
+aiofiles==25.1.0

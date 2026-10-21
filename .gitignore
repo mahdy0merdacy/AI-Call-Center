@@ -20,3 +20,6 @@ chrome-profile-*/
 .env
 .env.*
 !.env.example
+
+# Data stack overrides (passwords, pepper)
+data/.env

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+const ws = new WebSocket("ws://127.0.0.1:8000/llm");
+
+ws.onopen = () => {
+  console.log("connected");
+  ws.send("hello from browser");
+};
+
+ws.onmessage = (msg) => {
+  console.log("server:", msg.data);
+};
+
+ws.onerror = (e) => console.log("error", e);
+ws.onclose = () => console.log("closed");
+</script>
+</body>
+</html>
