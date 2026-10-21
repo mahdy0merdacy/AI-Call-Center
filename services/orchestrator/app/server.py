@@ -192,9 +192,10 @@ async def serve(args):
     if not tenants:
         log.error("no tenant configs found")
 
+    # Blocking file reads are fine here: startup, before the server takes calls.
     groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key and Path(args.env).exists():
-        for line in Path(args.env).read_text().splitlines():
+    if not groq_key and Path(args.env).exists():  # noqa: ASYNC240
+        for line in Path(args.env).read_text().splitlines():  # noqa: ASYNC240
             if line.startswith("GROQ_API_KEY="):
                 groq_key = line.split("=", 1)[1].strip()
     if not groq_key:

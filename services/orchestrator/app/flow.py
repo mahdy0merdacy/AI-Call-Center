@@ -19,6 +19,7 @@ deterministic: the shipment-ID question comes out identically every time.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +29,9 @@ import yaml
 
 log = logging.getLogger("flow")
 
-TENANTS_DIR = Path(__file__).resolve().parents[3] / "tenants"
+# Repo layout by default; containers point this at a mounted config directory.
+TENANTS_DIR = Path(os.environ.get("TENANTS_DIR")
+                   or Path(__file__).resolve().parents[3] / "tenants")
 
 # Callers read codes aloud and STT writes them as words as often as digits.
 _NUMBER_WORDS = {

@@ -1,0 +1,85 @@
+# Root pipeline. Runs repo-wide checks, then triggers one child pipeline per
+# service whose files changed. Each service owns its pipeline in
+# <service>/.gitlab-ci.yml; shared job definitions live in ci/templates/.
+#
+#   checks ──► services (child pipelines, each: verify ► test ► build ► scan ► publish)
+
+# Run for merge requests, for main, for tags and for manual runs. A plain push
+# to a feature branch runs nothing: open an MR to get a pipeline.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+  auto_cancel:
+    on_new_commit: interruptible
+
+stages: [checks, services]
+
+default:
+  interruptible: true
+
+# ── repo-wide checks ───────────────────────────────────────────────────────────
+
+# Scans the full history, not just the tree: a secret committed and then deleted
+# is still in git and still leaked.
+secrets:
+  stage: checks
+  image:
+    name: zricethezav/gitleaks:v8.28.0
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - gitleaks git . --redact --no-banner
+      --report-format junit --report-path gitleaks.xml
+  artifacts:
+    when: always
+    reports:
+      junit: gitleaks.xml
+
+# MRs are squashed, so the MR title becomes the commit on main. Enforce
+# Conventional Commits on it (see CONTRIBUTING.md).
+mr-title:
+  stage: checks
+  image: busybox:1.37.0
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - |
+      title="${CI_MERGE_REQUEST_TITLE#Draft: }"
+      echo "MR title: $title"
+      if ! echo "$title" | grep -Eq '^(feat|fix|refactor|test|docs|chore|ci|perf|build|revert)(\([a-z0-9-]+\))?!?: .+'; then
+        echo "Use Conventional Commits, e.g. 'feat(stt): stream partials'. See CONTRIBUTING.md"
+        exit 1
+      fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# ── services ───────────────────────────────────────────────────────────────────
+
+# Child pipelines don't reliably see MR variables, so pass what they need.
+.child:
+  stage: services
+  variables:
+    PARENT_PIPELINE_SOURCE: $CI_PIPELINE_SOURCE
+    PARENT_COMMIT_BRANCH: $CI_COMMIT_BRANCH
+    MR_TARGET_BRANCH: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+
+orchestrator:
+  extends: .child
+  trigger:
+    include: services/orchestrator/.gitlab-ci.yml
+    strategy: depend          # the child's result becomes this job's result
+  # MR pipelines diff against the target branch; main pipelines diff against the
+  # previous push. Manual runs and tags build everything.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/orchestrator/**/*
+        - services/media-edge/gen/**/*  # client copy of the contract (drift check)
+        - services/mcp-servers/**/*     # tools it calls
+        - tenants/**/*                  # its behaviour is configured here
+        - ci/templates/**/*
+        - .gitlab-ci.yml
