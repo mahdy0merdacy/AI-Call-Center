@@ -136,7 +136,7 @@ default:
     # Report and gate share one filter, so the MR's test widget lists exactly
     # what blocks the pipeline (an unfiltered report shows ~160 "failures").
     - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
-      --format template --template "@contrib/junit.tpl"
+      --format template --template "@/contrib/junit.tpl"
       --output junit-trivy.xml "$IMAGE:$IMAGE_TAG"
     - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
       --exit-code 1 --skip-db-update "$IMAGE:$IMAGE_TAG"
