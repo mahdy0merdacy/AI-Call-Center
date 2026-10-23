@@ -1,0 +1,9 @@
+# Runtime dependencies, pinned exactly so the image, the vulnerability scan and the SBOM
+# all describe the same thing. Bump deliberately (CI scans every change).
+Django==5.2.17
+django-mongodb-backend==5.2.4
+djangorestframework==3.18.3
+gunicorn==23.0.0
+# [crypto] pulls in `cryptography`, required to verify RS256 tokens.
+PyJWT[crypto]==2.15.1
+django-cors-headers==4.9.0

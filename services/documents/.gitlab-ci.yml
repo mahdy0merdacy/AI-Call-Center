@@ -1,0 +1,286 @@
+# Documents service pipeline: every job that belongs to THIS service.
+#
+#   verify ─► test ─► build ─► scan ─► publish (default branch only)
+#
+# One file, two homes (no edits needed to move it):
+#   * standalone repo : included by the root .gitlab-ci.yml, SERVICE_DIR is "."
+#   * monorepo        : copied to services/documents/.gitlab-ci.yml and started as a child
+#                       pipeline; the parent passes SERVICE_DIR=services/documents
+#                       (see integration/root-trigger.yml).
+#
+# Repo-wide checks (gitleaks secret scan, MR title) are NOT here: they run once at the
+# root, not once per service. Everything that reads this service's files or its image
+# IS here, so it runs only when the service changes.
+#
+# Contract with the parent pipeline (all optional, set only in the monorepo):
+#   SERVICE_DIR            directory of this service ("." when standalone)
+#   PARENT_COMMIT_BRANCH   branch name on branch pipelines (empty on MR pipelines)
+
+stages: [verify, test, build, scan, publish]
+
+variables:
+  SERVICE: documents
+  SERVICE_DIR: "."
+  # Same base image as the Dockerfile: CI tests what production runs.
+  PYTHON_IMAGE: python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
+  DOCKER_VERSION: "29.4.0"
+  IMAGE: $CI_REGISTRY_IMAGE/$SERVICE
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+default:
+  interruptible: true # a newer push to the same MR cancels this run
+
+# ── shared building blocks ──────────────────────────────────────────────────────
+
+.python:
+  image: $PYTHON_IMAGE
+  cache:
+    key:
+      prefix: pip-$SERVICE
+      files: [$SERVICE_DIR/requirements-dev.txt]
+    paths: [.cache/pip]
+  before_script:
+    - cd "$SERVICE_DIR"
+    - pip install -q -r requirements-dev.txt
+
+.docker:
+  image: docker:${DOCKER_VERSION}-cli
+  services:
+    - name: docker:${DOCKER_VERSION}-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: /certs/client
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+
+# ── verify: static checks, nothing is built or run yet ──────────────────────────
+
+lint:
+  extends: .python
+  stage: verify
+  script:
+    - ruff check . --output-format gitlab --output-file "$CI_PROJECT_DIR/ruff.json"
+      || { ruff check . --output-format concise; exit 1; }
+  artifacts:
+    when: always
+    reports:
+      codequality: ruff.json # shown inline on the MR diff
+
+format:
+  extends: .python
+  stage: verify
+  script:
+    - ruff format --check --diff .
+
+# Dockerfile best practices.
+dockerfile:
+  stage: verify
+  image:
+    name: hadolint/hadolint:v2.14.0-debian
+    entrypoint: [""]
+  script:
+    - hadolint "$SERVICE_DIR/Dockerfile"
+
+# SAST: Python, Django, hard-coded secrets and Dockerfile rules from the Semgrep registry.
+# A finding that is intentional is silenced on its own line with `# nosemgrep: <rule>`
+# and a reason, never by weakening the scan.
+sast:
+  stage: verify
+  image: semgrep/semgrep:1.181.1
+  variables:
+    SEMGREP_SEND_METRICS: "off"
+  script:
+    # The semgrep image sets this and then insists the code is mounted at /src;
+    # in GitLab the code is in $CI_PROJECT_DIR, so turn the Docker special-case off.
+    - unset SEMGREP_IN_DOCKER
+    - cd "$SERVICE_DIR"
+    - semgrep scan --config p/python --config p/django --config p/secrets --config p/dockerfile
+      --exclude venv --exclude media --metrics=off --error
+      --junit-xml --output "$CI_PROJECT_DIR/semgrep-junit.xml"
+      || { semgrep scan --config p/python --config p/django --config p/secrets
+      --config p/dockerfile --exclude venv --exclude media --metrics=off --error; exit 1; }
+  artifacts:
+    when: always
+    reports:
+      junit: semgrep-junit.xml
+
+# Known vulnerabilities in the dependencies (requirements.txt is pinned exactly).
+# Fails on HIGH/CRITICAL that have a fix available; unfixable ones are reported only.
+deps-scan:
+  stage: verify
+  image:
+    name: aquasec/trivy:0.65.0
+    entrypoint: [""]
+  variables:
+    TRIVY_CACHE_DIR: .trivycache
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    # Covers the whole run, DB download included (~130 MB; minutes on a slow link).
+    TRIVY_TIMEOUT: 15m
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    # Save even when the scan fails, or a timeout means re-downloading the DB on every
+    # retry, which times out again.
+    when: always
+  script:
+    # Absolute template path: "@contrib/..." is relative to the working directory, which
+    # in GitLab is the project folder, not the image root where the templates live.
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --format template --template "@/contrib/junit.tpl"
+      --output junit-trivy-deps.xml "$SERVICE_DIR/requirements.txt"
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --exit-code 1 --skip-db-update "$SERVICE_DIR/requirements.txt"
+  artifacts:
+    when: always
+    reports:
+      junit: junit-trivy-deps.xml
+
+# Misconfiguration in this service's own infrastructure files (Dockerfile, CI file).
+# Repo-wide infrastructure (data/, k8s manifests) is checked by the root pipeline.
+iac:
+  stage: verify
+  image:
+    name: bridgecrew/checkov:3.3.30
+    entrypoint: [""]
+  script:
+    - checkov --directory "$SERVICE_DIR" --framework dockerfile gitlab_ci
+      --skip-path "$SERVICE_DIR/venv" --compact --quiet
+      --output cli --output junitxml --output-file-path console,"$CI_PROJECT_DIR/checkov-junit.xml"
+  artifacts:
+    when: always
+    reports:
+      junit: checkov-junit.xml
+
+# ── test ────────────────────────────────────────────────────────────────────────
+
+tests:
+  extends: .python
+  stage: test
+  services:
+    # Throwaway database, deleted when the job ends.
+    - name: mongo:7
+      alias: mongo
+  variables:
+    MONGODB_URI: "mongodb://mongo:27017"
+    MONGODB_DB: ci
+    # Dummy values for the test run only; the tests sign their own throwaway JWT keys.
+    DJANGO_DEBUG: "true"
+    DJANGO_SECRET_KEY: ci-only-not-a-secret
+  script:
+    - python manage.py check
+    # Fails if a model change was committed without its migration.
+    - python manage.py makemigrations --check --dry-run
+    - coverage run manage.py test --noinput -v 2
+    - coverage report --fail-under=90
+    - coverage xml -o "$CI_PROJECT_DIR/coverage.xml"
+  coverage: '/^TOTAL.*\s+(\d+(?:\.\d+)?%)$/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml # covered/uncovered lines on the MR diff
+
+# ── build / scan / publish ──────────────────────────────────────────────────────
+
+# Build once, push by commit SHA. Every later stage uses this exact image; nothing is
+# rebuilt on the way to production. The build context is the service directory.
+build-image:
+  extends: .docker
+  stage: build
+  needs: [lint, format, dockerfile, sast, deps-scan, iac, tests]
+  script:
+    - docker buildx build
+      --file "$SERVICE_DIR/Dockerfile"
+      --cache-from "type=registry,ref=$IMAGE:main"
+      --cache-to type=inline
+      --label "org.opencontainers.image.source=$CI_PROJECT_URL"
+      --label "org.opencontainers.image.revision=$CI_COMMIT_SHA"
+      --label "org.opencontainers.image.created=$CI_PIPELINE_CREATED_AT"
+      --tag "$IMAGE:$IMAGE_TAG"
+      --push
+      "$SERVICE_DIR"
+    - docker buildx imagetools inspect "$IMAGE:$IMAGE_TAG"
+
+# Scans the image that was just built: OS packages and Python packages inside it.
+scan-image:
+  stage: scan
+  needs: [build-image]
+  image:
+    name: aquasec/trivy:0.65.0
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+    TRIVY_CACHE_DIR: .trivycache
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    # Covers the whole run, DB download included (~130 MB; minutes on a slow link).
+    TRIVY_TIMEOUT: 15m
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    # Save even when the scan fails, or a timeout means re-downloading the DB on every
+    # retry, which times out again.
+    when: always
+  script:
+    # Report and gate share one filter, so the MR's test widget lists exactly what blocks.
+    - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --format template --template "@/contrib/junit.tpl"
+      --output junit-trivy-image.xml "$IMAGE:$IMAGE_TAG"
+    - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --exit-code 1 --skip-db-update "$IMAGE:$IMAGE_TAG"
+  artifacts:
+    when: always
+    reports:
+      junit: junit-trivy-image.xml
+
+# Software bill of materials (CycloneDX) of the exact image: what is inside it, kept as
+# a build artifact so a future advisory can be matched to the images that contain it.
+sbom:
+  stage: scan
+  needs: [build-image]
+  image:
+    name: aquasec/trivy:0.65.0
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+    TRIVY_CACHE_DIR: .trivycache
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    # Covers the whole run, DB download included (~130 MB; minutes on a slow link).
+    TRIVY_TIMEOUT: 15m
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    # Save even when the scan fails, or a timeout means re-downloading the DB on every
+    # retry, which times out again.
+    when: always
+  script:
+    - trivy image --format cyclonedx --output sbom.cdx.json "$IMAGE:$IMAGE_TAG"
+  artifacts:
+    name: sbom-$SERVICE-$IMAGE_TAG
+    expire_in: 1 year
+    paths: [sbom.cdx.json]
+
+# Default branch only: tag the already-scanned image as `main`. Server-side retag, so the
+# digest is identical to what was tested.
+publish-main:
+  extends: .docker
+  stage: publish
+  needs: [scan-image, sbom]
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - docker buildx imagetools create --tag "$IMAGE:main" "$IMAGE:$IMAGE_TAG"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $PARENT_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

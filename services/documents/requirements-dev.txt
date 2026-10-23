@@ -1,0 +1,4 @@
+# CI / local tooling on top of the runtime dependencies.
+-r requirements.txt
+ruff==0.17.2
+coverage==7.13.5
