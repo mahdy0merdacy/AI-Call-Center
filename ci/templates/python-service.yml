@@ -123,9 +123,15 @@ default:
     TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
     TRIVY_CACHE_DIR: .trivycache
     TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    # Covers the whole run, DB download included (~80 MB; minutes on a slow link).
+    TRIVY_TIMEOUT: 15m
   cache:
     key: trivy-db
     paths: [.trivycache]
+    # Save even when the scan fails, or a timeout means re-downloading the DB on
+    # every retry, which times out again.
+    when: always
   script:
     # Report and gate share one filter, so the MR's test widget lists exactly
     # what blocks the pipeline (an unfiltered report shows ~160 "failures").

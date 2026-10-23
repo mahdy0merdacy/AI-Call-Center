@@ -240,8 +240,11 @@ def main():
     ap.add_argument("--llm-model", default="qwen/qwen3.8-27b")
     ap.add_argument("--mcp-acme", default="http://127.0.0.1:9101/mcp")
     ap.add_argument("--mcp-swiftnet", default="http://127.0.0.1:9102/mcp")
-    ap.add_argument("--env", default=str(Path(__file__).resolve().parents[3]
-                                         / "voice-pipeline" / "LLM" / ".env"))
+    # GROQ_API_KEY comes from the environment (a Secret in k8s). The file is a
+    # local-dev convenience only; the image never ships one.
+    ap.add_argument("--env", default=str(Path(__file__).resolve().parents[3] / ".env"),
+                    help="dev fallback file holding GROQ_API_KEY; ignored if the "
+                         "env var is set")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",

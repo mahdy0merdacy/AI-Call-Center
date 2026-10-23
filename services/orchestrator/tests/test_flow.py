@@ -33,12 +33,12 @@ PHONE = Slot(name="phone", pattern=r"^[0-9]{10}$", prompt="?", reprompt="?",
     ("AC4471X209", "AC4471X209"),                              # whole utterance
     ("A C four four seven one X two zero nine", "AC4471X209"),  # spoken out
     ("yes it's AC4471X209 thanks", "AC4471X209"),               # embedded
-    pytest.param(
-        "it is A C four four seven one X two zero nine okay", "AC4471X209",
-        marks=pytest.mark.xfail(strict=True, reason=(
-            "known bug: span search starts at the first token, so leading filler "
-            "is glued on and 'itisAC4471' passes the pattern")),
-    ),
+    # Leading filler used to be glued on: a left-to-right span search matched
+    # "it is A C four four seven one" -> "itisAC4471", ten alphanumerics with
+    # digits, satisfying both the pattern and the digit guard.
+    ("it is A C four four seven one X two zero nine okay", "AC4471X209"),
+    ("um so it is A C four four seven one X two zero nine", "AC4471X209"),
+    ("so the code is AC4471X209 I think", "AC4471X209"),
 ])
 def test_code_slot_accepts(utterance, expected):
     assert CODE.extract(utterance) == expected

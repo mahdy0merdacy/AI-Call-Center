@@ -83,3 +83,4 @@ orchestrator:
         - tenants/**/*                  # its behaviour is configured here
         - ci/templates/**/*
         - .gitlab-ci.yml
+  

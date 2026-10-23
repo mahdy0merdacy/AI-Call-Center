@@ -43,15 +43,13 @@ capacity becomes compute-bound instead of memory-bound.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "spikes"))
-from simul_compat import REPO, LiveSegmenter, install_shims  # noqa: E402
+from .whisper_compat import REPO, LiveSegmenter, install_shims
 
 install_shims()
 
