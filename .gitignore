@@ -29,3 +29,44 @@ data/.env
 !README.md
 !CONTRIBUTING.md
 docs/
+
+# Private keys and certificates (services/*)
+*.pem
+*.key
+*.p12
+*.pfx
+**/keys/*
+!**/keys/.gitkeep
+
+# AI assistant files and personal notes
+CLAUDE.md
+.claude/
+AGENTS.md
+DEV_LOG.md
+SESSION_*.md
+
+# Generated files (tests, lint, scans, builds, local data)
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+report.xml
+*-junit.xml
+junit-*.xml
+bandit-report.*
+reports/
+staticfiles/
+media/
+node_modules/
+build/
+dist/
+*.sqlite3
+*.dump
+*.sql.gz
+volumes/
+
+# Keep the auth service test documentation (*.md is ignored above)
+!services/tenant-portal/TESTING.md

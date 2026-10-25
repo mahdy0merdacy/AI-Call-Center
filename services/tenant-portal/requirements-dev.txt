@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest==9.1.1
+pytest-django==4.14.0
+# Coverage report for CI (Cobertura XML + percentage in GitLab).
+pytest-cov==7.1.0
+# Lint (maintainability) and SAST (security) for the CI pipeline.
+ruff==0.17.2
+bandit==1.9.4

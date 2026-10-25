@@ -1,0 +1,22 @@
+# Lint + format rules. CI runs `ruff check` (blocking) and `ruff format --check`.
+line-length = 100
+target-version = "py312"
+# Migrations are generated; keep them out of lint and format.
+extend-exclude = ["venv", "media", "documents/migrations"]
+
+[lint]
+# E/F pyflakes+pycodestyle, I import order, B bugbear, UP modern syntax,
+# S flake8-bandit (security), DJ django, RUF ruff-specific.
+select = ["E", "F", "I", "B", "UP", "S", "DJ", "RUF"]
+ignore = [
+    # Django/DRF declare mutable class attributes (Meta.fields, permission lists) by design.
+    "RUF012",
+]
+
+[lint.per-file-ignores]
+# Tests use bare assert and throwaway fake keys/passwords.
+"documents/tests.py" = ["S101", "S105", "S106"]
+
+[format]
+# The codebase already uses single quotes (Django's default style).
+quote-style = "single"

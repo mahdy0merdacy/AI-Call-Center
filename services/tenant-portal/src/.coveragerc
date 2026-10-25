@@ -1,0 +1,8 @@
+# Coverage measures application code only (not tests, migrations or settings).
+[run]
+source = accounts, audit, config
+omit =
+    */tests/*
+    */migrations/*
+    config/settings/*
+    config/wsgi.py

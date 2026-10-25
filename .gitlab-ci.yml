@@ -84,3 +84,24 @@ orchestrator:
         - ci/templates/**/*
         - .gitlab-ci.yml
   
+tenant-portal:
+  extends: .child
+  trigger:
+    include: services/tenant-portal/.gitlab-ci.yml
+    strategy: depend          # the child's result becomes this job's result
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/tenant-portal/**/*
+        - .gitlab-ci.yml
+
+documents:
+  extends: .child
+  trigger:
+    include: services/documents/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/documents/**/*
+        - .gitlab-ci.yml
