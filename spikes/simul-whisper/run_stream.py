@@ -25,9 +25,9 @@ from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # spikes/ -> simul_compat
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services" / "stt" / "app"))
 
-from simul_compat import REPO, install_shims  # noqa: E402
+from whisper_compat import REPO, install_shims  # noqa: E402
 
 install_shims()
 

@@ -1,0 +1,8 @@
+# CI and local checks. Not installed in the image.
+-r requirements.txt
+grpcio-tools==1.84.0      # gen.sh; must match grpcio
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.17.1
+mypy==2.4.0
+types-PyYAML==6.0.12.20260906

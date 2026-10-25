@@ -69,7 +69,7 @@ class ToolRegistry:
         t0 = time.perf_counter()
         try:
             return await asyncio.wait_for(self._invoke(url, tool, args), timeout=timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning("tool %s timed out after %.1fs", tool, timeout_s)
             return {"outcome": "timeout"}
         except Exception as exc:

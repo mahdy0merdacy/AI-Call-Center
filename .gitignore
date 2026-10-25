@@ -23,3 +23,9 @@ chrome-profile-*/
 
 # Data stack overrides (passwords, pepper)
 data/.env
+
+#documentation
+*.md
+!README.md
+!CONTRIBUTING.md
+docs/

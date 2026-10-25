@@ -1,4 +1,10 @@
-"""Shared glue for driving the cloned Simul-Whisper repo.
+"""Glue for driving the vendored Simul-Whisper repo.
+
+Owned by the STT service. It used to live in spikes/ and be reached with a
+sys.path hop three directories up — which works from a checkout and does not
+exist inside a container. Now it is an ordinary module of the service, and the
+location of the vendored clone is configuration (SIMUL_WHISPER_DIR), mirroring
+how the orchestrator takes TENANTS_DIR.
 
 Three compatibility shims plus a live-stream segmenter. Kept here so the clone in
 simul_whisper/ stays pristine and pullable — nothing in this file edits it.
@@ -13,13 +19,24 @@ The shims exist because the repo targets Python 3.9 / PyTorch 2.0 and we run it 
      forbids -> use the pure-torch path that timing.py already contains
 """
 
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 
-REPO = Path(__file__).resolve().parent.parent / "simul_whisper"
+# Where the vendored clone lives. Defaults to the repo layout for a dev
+# checkout; the image sets it to the path it copied the clone to.
+REPO = Path(
+    os.environ.get("SIMUL_WHISPER_DIR")
+    or Path(__file__).resolve().parents[3] / "simul_whisper"
+)
+if not (REPO / "simul_whisper").is_dir():
+    raise RuntimeError(
+        f"Simul-Whisper clone not found at {REPO}. "
+        "Set SIMUL_WHISPER_DIR to the directory containing simul_whisper/ and cif_models/."
+    )
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
