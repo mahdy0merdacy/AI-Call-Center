@@ -19,6 +19,7 @@ deterministic: the shipment-ID question comes out identically every time.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +29,9 @@ import yaml
 
 log = logging.getLogger("flow")
 
-TENANTS_DIR = Path(__file__).resolve().parents[3] / "tenants"
+# Repo layout by default; containers point this at a mounted config directory.
+TENANTS_DIR = Path(os.environ.get("TENANTS_DIR")
+                   or Path(__file__).resolve().parents[3] / "tenants")
 
 # Callers read codes aloud and STT writes them as words as often as digits.
 _NUMBER_WORDS = {
@@ -65,6 +68,24 @@ def normalise_spoken(text: str) -> str:
         out.append(_NUMBER_WORDS.get(w, words[i]))
         i += 1
     return "".join(out)
+
+
+def _code_like(token: str) -> bool:
+    """Can this token be part of a spoken code?
+
+    Only single characters ("A", "C", "7"), number/repeat words ("four",
+    "double") and chunks containing a digit ("AC4471", "X209") qualify. Ordinary
+    words — "it", "is", "okay", "think" — do not, which is what stops them being
+    glued onto a code and passing the pattern by accident.
+    """
+    t = re.sub(r"[^A-Za-z0-9]", "", token).lower()
+    if not t:
+        return False
+    if len(t) == 1:
+        return True
+    if t in _NUMBER_WORDS or t in _REPEAT:
+        return True
+    return any(c.isdigit() for c in t)
 
 
 @dataclass
@@ -117,13 +138,36 @@ class Slot:
             if ok(m.group(0)):
                 return m.group(0)
 
-        # 4. embedded, spoken out across several tokens
+        # 4. embedded, spoken out across several tokens:
+        #    "it is A C four four seven one X two zero nine okay"
+        #
+        # Only build spans from unbroken runs of code-like tokens. Searching
+        # every span let filler be absorbed from either end: left-to-right gave
+        # "it is A C four four seven one" -> "itisAC4471", and preferring the
+        # latest start instead gave "seven one X two zero nine okay" ->
+        # "71X209okay". Both are ten alphanumerics containing digits, so both
+        # passed the pattern and the digit guard. Excluding ordinary words from
+        # the span entirely removes the whole class.
+        #
+        # Later runs win: callers put filler before the code, not after.
         tokens = raw.split()
-        for i in range(len(tokens)):
-            for j in range(i + 1, len(tokens) + 1):
-                cand = normalise_spoken(" ".join(tokens[i:j]))
-                if ok(cand):
-                    return cand
+        runs: list[list[str]] = []
+        current: list[str] = []
+        for tok in tokens:
+            if _code_like(tok):
+                current.append(tok)
+            elif current:
+                runs.append(current)
+                current = []
+        if current:
+            runs.append(current)
+
+        for run in reversed(runs):
+            for i in range(len(run)):
+                for j in range(len(run), i, -1):   # longest span first
+                    cand = normalise_spoken(" ".join(run[i:j]))
+                    if ok(cand):
+                        return cand
         return None
 
 

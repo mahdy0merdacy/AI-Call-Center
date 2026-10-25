@@ -38,9 +38,9 @@ from aiohttp import web
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 
 HERE = Path(__file__).parent
-sys.path.insert(0, str(HERE.parent))  # spikes/ -> simul_compat
+sys.path.insert(0, str(HERE.parents[1] / "services" / "stt" / "app"))
 
-from simul_compat import REPO, LiveSegmenter, install_shims  # noqa: E402
+from whisper_compat import REPO, LiveSegmenter, install_shims  # noqa: E402
 
 install_shims()
 

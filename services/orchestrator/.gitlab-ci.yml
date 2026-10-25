@@ -1,0 +1,96 @@
+# Orchestrator child pipeline. Triggered by the root .gitlab-ci.yml when the
+# orchestrator, its contract, the tenant configs or the shared CI templates change.
+#
+#   verify ─► test ─► build ─► scan ─► publish (main only)
+
+include:
+  - local: ci/templates/python-service.yml
+
+variables:
+  SERVICE: orchestrator
+  SERVICE_DIR: services/orchestrator
+
+stages: [verify, test, build, scan, publish]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+
+# ── verify ─────────────────────────────────────────────────────────────────────
+
+lint:
+  extends: .py-lint
+
+format:
+  extends: .py-format
+  # The code predates the formatter; ~170 lines would change. Warn until the team
+  # agrees on a one-off reformat MR, then delete this line.
+  allow_failure: true
+
+typecheck:
+  extends: .py-typecheck
+
+dockerfile:
+  extends: .hadolint
+
+tenants:
+  extends: .python
+  stage: verify
+  script:
+    - python "$CI_PROJECT_DIR/tenants/validate.py"
+
+proto-lint:
+  stage: verify
+  image:
+    name: bufbuild/buf:1.57.0
+    entrypoint: [""]
+  script:
+    - cd "$SERVICE_DIR/proto"
+    - buf lint
+
+# The media edge is the other end of this stream. A wire-breaking change merged
+# here would break live calls until the edge is redeployed, so block it on MRs.
+proto-breaking:
+  stage: verify
+  image:
+    name: bufbuild/buf:1.57.0
+    entrypoint: [""]
+  script:
+    - cd "$SERVICE_DIR/proto"
+    - buf breaking --against
+      "${CI_REPOSITORY_URL}#branch=${MR_TARGET_BRANCH},subdir=${SERVICE_DIR}/proto"
+  rules:
+    - if: $MR_TARGET_BRANCH
+
+# gen/ is committed, so it must match the .proto. Regenerate and compare.
+proto-generated:
+  extends: .python
+  stage: verify
+  script:
+    - cp -r gen /tmp/gen-orchestrator
+    - cp -r ../media-edge/gen /tmp/gen-media-edge
+    - PYTHON=python ./gen.sh
+    - |
+      if ! diff -r /tmp/gen-orchestrator gen || ! diff -r /tmp/gen-media-edge ../media-edge/gen; then
+        echo "gen/ is stale: run services/orchestrator/gen.sh and commit the result"
+        exit 1
+      fi
+
+# ── test ───────────────────────────────────────────────────────────────────────
+
+unit-tests:
+  extends: .py-test
+
+# ── build / scan / publish ─────────────────────────────────────────────────────
+
+build-image:
+  extends: .docker-build
+  needs: [lint, typecheck, dockerfile, unit-tests]
+
+scan-image:
+  extends: .trivy-scan
+  needs: [build-image]
+
+publish-main:
+  extends: .docker-promote-main
+  needs: [scan-image]
