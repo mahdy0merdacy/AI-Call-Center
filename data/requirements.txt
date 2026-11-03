@@ -1,0 +1,2 @@
+# Data platform client libraries (on top of the shared .venv).
+confluent-kafka==2.16.0

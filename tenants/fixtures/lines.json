@@ -1,0 +1,8 @@
+{
+  "_comment": "Fake data for check_line_status. Four outcomes, four different conversations.",
+  "0142887711": { "outcome": "line_ok", "sync_speed_mbps": 68, "last_drop": null },
+  "0298445102": { "outcome": "area_outage", "area": "Nantes centre", "eta": "2026-09-28T18:00:00", "ticket": "OUT-4471" },
+  "0155093388": { "outcome": "account_suspended", "reason": "billing" },
+  "0100000000": { "outcome": "line_ok", "sync_speed_mbps": 12, "last_drop": "2026-09-27T22:40:00",
+                  "_demo_note": "slow + recent drop — good for walking the troubleshoot steps" }
+}

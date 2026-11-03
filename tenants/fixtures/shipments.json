@@ -1,0 +1,27 @@
+{
+  "_comment": "Fake data for lookup_shipment. Includes the failure cases on purpose — a demo that only shows the happy path proves nothing.",
+  "AC4471X209": {
+    "outcome": "in_transit",
+    "location": "Lyon sorting centre",
+    "estimated_delivery": "2026-09-30",
+    "recipient_initial": "M."
+  },
+  "AC8823B110": {
+    "outcome": "delivered",
+    "delivered_at": "2026-09-26T14:12:00",
+    "signed_by": "R. Dupont"
+  },
+  "AC1199Z044": {
+    "outcome": "delayed",
+    "reason": "weather disruption on the Marseille route",
+    "new_estimate": "2026-10-02",
+    "original_estimate": "2026-09-27"
+  },
+  "AC0000A000": {
+    "outcome": "in_transit",
+    "location": "out for delivery",
+    "estimated_delivery": "2026-09-28",
+    "reschedulable": false,
+    "_demo_note": "use this to show reschedule_delivery hitting too_late"
+  }
+}

@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package aicallcenter.stt.v1;
+
+// Streaming speech-to-text.
+//
+// One RPC == one call. The stream *is* the session: because it is a single
+// long-lived bidirectional stream, a call's audio stays pinned to the session
+// that is transcribing it, so there is no session affinity to engineer at the
+// load balancer.
+//
+// The service reports what it hears (speech started, speech stopped, here is
+// the text). It deliberately does NOT decide whether the bot should answer —
+// that is turn policy and belongs to the orchestrator, which knows the dialogue
+// state. The orchestrator pushes its thresholds down via StreamConfig and can
+// force a boundary with EndUtterance.
+service SpeechToText {
+  rpc Transcribe(stream TranscribeRequest) returns (stream TranscribeEvent);
+}
+
+message TranscribeRequest {
+  oneof payload {
+    StreamConfig config = 1;  // must be the first message
+    AudioChunk audio = 2;
+    EndUtterance end_utterance = 3;  // orchestrator forces a boundary
+  }
+}
+
+message StreamConfig {
+  string session_id = 1;
+  string language = 2;  // required: there is no auto-detect
+
+  // Endpointing thresholds. The orchestrator owns these values (policy) even
+  // though the service applies them (mechanism), so patience can vary with
+  // dialogue state — longer while a caller reads out a card number, shorter
+  // for a yes/no.
+  uint32 silence_ms_to_endpoint = 3;  // default 900
+  uint32 min_speech_ms = 4;           // default 200, ignores coughs and clicks
+  float vad_threshold = 5;            // default 0.5
+
+  AudioFormat format = 6;
+}
+
+message AudioFormat {
+  uint32 sample_rate = 1;  // 16000
+  uint32 channels = 2;     // 1
+  Encoding encoding = 3;
+
+  enum Encoding {
+    ENCODING_UNSPECIFIED = 0;
+    PCM_S16LE = 1;
+  }
+}
+
+message AudioChunk {
+  bytes pcm = 1;
+  // Monotonic sample index of the first sample in this chunk. Lets the service
+  // detect loss and reordering instead of silently transcribing a gap.
+  uint64 start_sample = 2;
+  uint64 sent_unix_ns = 3;
+}
+
+message EndUtterance {}
+
+message TranscribeEvent {
+  oneof event {
+    Ready ready = 1;
+    SpeechStart speech_start = 2;
+    Partial partial = 3;
+    SpeechEnd speech_end = 4;
+    Final final = 5;
+    Metrics metrics = 6;
+  }
+}
+
+message Ready {
+  string model = 1;
+  string device = 2;
+  float segment_length_s = 3;
+}
+
+message SpeechStart {
+  uint64 at_sample = 1;
+}
+
+// Unstable. Show it to the caller, never feed it to the LLM. This is what makes
+// the UI feel as responsive as a managed service.
+message Partial {
+  string text = 1;
+  string delta = 2;
+}
+
+// The audio went quiet. NOT "the turn is over" — that is the orchestrator's call.
+message SpeechEnd {
+  uint64 at_sample = 1;
+  uint32 silence_ms = 2;
+}
+
+// Committed transcript for one utterance. Safe to feed to the LLM.
+message Final {
+  string text = 1;
+  uint64 start_sample = 2;
+  uint64 end_sample = 3;
+}
+
+message Metrics {
+  uint32 infer_ms = 1;
+  uint32 backlog_chunks = 2;
+  uint32 active_sessions = 3;
+  float audio_s = 4;
+}

@@ -1,0 +1,106 @@
+# Voice pipeline — isolated from companion.io
+# Flow: client (mic) -> orchestrator -> STT / LLM / TTS, with Redis for session state.
+services:
+
+  # Redis — session state (conversation history + mailbox streams)
+  redis:
+    image: redis:7-alpine
+    container_name: voice-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - voice-network
+
+  # STT — Speech-to-Text (Azure)
+  stt-service:
+    build:
+      context: ./STT
+      dockerfile: Dockerfile
+    container_name: voice-stt
+    ports:
+      - "8001:8001"
+    environment:
+      - SPEECH_KEY=${SPEECH_KEY}
+      - SPEECH_REGION=${SPEECH_REGION}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - voice-network
+    restart: unless-stopped
+
+  # LLM — Language model (Groq)
+  llm-service:
+    build:
+      context: ./LLM
+      dockerfile: Dockerfile
+    container_name: voice-llm
+    ports:
+      - "8002:8002"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - voice-network
+    restart: unless-stopped
+
+  # TTS — Text-to-Speech (Azure)
+  tts-service:
+    build:
+      context: ./TTS
+      dockerfile: Dockerfile
+    container_name: voice-tts
+    ports:
+      - "8003:8003"
+    environment:
+      - SPEECH_KEY=${SPEECH_KEY}
+      - SPEECH_REGION=${SPEECH_REGION}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - voice-network
+    restart: unless-stopped
+
+  # Orchestrator — per-session actor hub, coordinates STT -> LLM -> TTS
+  orchestrator:
+    build:
+      context: ./Orchestrator
+      dockerfile: Dockerfile
+    container_name: voice-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - STT_URL=ws://stt-service:8001/stt
+      - LLM_URL=ws://llm-service:8002/llm
+      - TTS_URL=ws://tts-service:8003/tts
+    depends_on:
+      redis:
+        condition: service_healthy
+      stt-service:
+        condition: service_started
+      llm-service:
+        condition: service_started
+      tts-service:
+        condition: service_started
+    networks:
+      - voice-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+
+networks:
+  voice-network:
+    driver: bridge

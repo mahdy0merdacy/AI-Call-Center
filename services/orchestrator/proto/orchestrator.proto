@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package aicallcenter.orchestrator.v1;
+
+// The control plane.
+//
+// One RPC == one call. The media edge streams EVENTS up (what the caller did);
+// the orchestrator streams DIRECTIVES down (what should happen next).
+//
+// What deliberately does NOT cross this boundary: audio. The edge terminates
+// WebRTC, talks to STT, and calls TTS itself. The orchestrator sends TEXT and
+// never relays a byte of media — that is the whole point of the split. Routing
+// 50 audio frames/second through the component that makes decisions would size
+// it for throughput it gains nothing from, and would mean every prompt change
+// redeploys the thing carrying live calls.
+//
+// Volume across this stream is ~10 messages per turn, against ~50 audio frames
+// per second on the data plane. Three orders of magnitude.
+service Orchestrator {
+  rpc Session(stream CallEvent) returns (stream Directive);
+}
+
+// ── edge -> orchestrator ────────────────────────────────────────────────────
+
+message CallEvent {
+  oneof event {
+    StartCall start = 1;      // must be first
+    Transcript transcript = 2;
+    SpeechStarted speech_started = 3;
+    SpeechEnded speech_ended = 4;
+    EndCall end = 5;
+  }
+}
+
+message StartCall {
+  // Identifies the tenant. Comes from the widget URL slug, which is PUBLIC —
+  // it selects a tenant, it does not authorise anything. The orchestrator
+  // resolves capabilities (tools, knowledge) from it server-side; nothing the
+  // browser sends is trusted beyond this selector.
+  string tenant_slug = 1;
+  string call_id = 2;
+  string caller_ref = 3;      // optional, e.g. a signed token from Django
+}
+
+message Transcript {
+  string text = 1;
+  bool is_final = 2;          // partials are sent too: they cost nothing here
+                              // and enable speculative retrieval later, hidden
+                              // behind the endpoint silence timer
+  uint64 at_sample = 3;
+}
+
+message SpeechStarted { uint64 at_sample = 1; }      // barge-in trigger
+message SpeechEnded { uint32 silence_ms = 1; }
+
+message EndCall { string reason = 1; }
+
+// ── orchestrator -> edge ────────────────────────────────────────────────────
+
+message Directive {
+  oneof directive {
+    Ready ready = 1;
+    Say say = 2;
+    SetEndpointing endpointing = 3;
+    Cancel cancel = 4;
+    Hangup hangup = 5;
+    TurnInfo turn = 6;        // observability only; the edge may ignore it
+  }
+}
+
+// Sent once, immediately after StartCall. The edge uses this to configure its
+// STT stream and its TTS calls — config pushed down, decisions kept up.
+message Ready {
+  string tenant_id = 1;
+  string display_name = 2;
+  string locale = 3;          // drives STT language AND TTS language
+  string voice = 4;           // Magpie speaker
+  SetEndpointing endpointing = 5;
+  repeated string flows = 6;  // for display/debug
+  repeated string tools = 7;
+}
+
+// One clause of speech. The orchestrator splits the LLM's output on clause
+// boundaries and emits these AS THEY BECOME AVAILABLE, rather than sending a
+// whole reply — Magpie does not stream (measured TTFB 2.498s vs total 2.499s),
+// so a whole reply would be seconds of silence. First clause lands in ~0.6s.
+//
+// The edge synthesises and plays each in order. Audio never comes back here.
+message Say {
+  string text = 1;
+  uint32 seq = 2;             // playback order
+  bool end_of_turn = 3;
+}
+
+// Endpointing is mechanism in STT, POLICY here. A slot where the caller reads a
+// code aloud needs ~1400ms or they get cut off mid-sequence; an open question
+// wants ~700ms. The orchestrator knows which, because it knows the dialogue
+// state. STT just applies the number.
+message SetEndpointing {
+  uint32 silence_ms = 1;
+  uint32 min_speech_ms = 2;
+  float vad_threshold = 3;
+}
+
+// Barge-in: stop speaking and discard queued audio.
+message Cancel { string reason = 1; }
+
+// Terminal. After this the orchestrator will not send more directives —
+// e.g. escalation to a human. A live test showed an agent that escalated and
+// then improvised a further 17 turns; this makes the end of the call explicit.
+message Hangup {
+  string reason = 1;          // escalate | complete | error
+  string message = 2;         // optional final words, already spoken via Say
+}
+
+// Observability: what the flow engine decided this turn.
+message TurnInfo {
+  string kind = 1;            // say | tool_result | open | escalate
+  string intent = 2;
+  map<string, string> slots = 3;
+  string tool = 4;
+  string outcome = 5;
+  uint32 llm_ms = 6;
+}

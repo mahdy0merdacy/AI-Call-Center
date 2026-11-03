@@ -1,0 +1,297 @@
+syntax = "proto3";
+
+package aicallcenter.events.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// The analytical event log.
+//
+// Not to be confused with the gRPC contracts in services/*/proto: those are
+// RPC messages between two live processes that are deployed together. These
+// are RECORDS — written once to Kafka, then read for months by consumers that
+// do not exist yet (stream jobs, Spark, dbt, a classifier). DDIA ch.4: data
+// outlives code, so this schema has to stay readable in both directions:
+//
+//   backward compatible  new code reads old records   (replaying the log)
+//   forward compatible   old code reads new records   (consumers upgraded last)
+//
+// Rules that keep both true. The Schema Registry enforces them at publish time
+// (compatibility = FULL_TRANSITIVE), but they are written here because a
+// rejected deploy is a worse place to learn them:
+//
+//   1. Never change a field's number or type. The number IS the field on the wire.
+//   2. Never reuse a number. Deleting a field means `reserved 7; reserved "name";`
+//   3. New fields are always optional in effect: proto3 readers see the zero
+//      value when absent, so every consumer must treat 0 / "" as "not reported".
+//   4. New oneof payloads are fine — old readers see an unset oneof and skip.
+//   5. Renaming a field is free on the wire but breaks JSON and Spark columns.
+//      Treat names as frozen too.
+//   6. A change that cannot follow these rules is a new package (v2) and a new
+//      topic, migrated by a stream job. Not an edit.
+//
+// Clocks (DDIA ch.8). Four laptops and a desktop do not agree on the time, and
+// NTP can step a clock backwards. So:
+//   - `occurred_at_ms` is wall clock: good for "which hour", useless for "which
+//     came first" across services.
+//   - Every duration (`*_ms`) is measured by ONE process on its monotonic clock.
+//     Never compute latency by subtracting two services' timestamps.
+//   - Audio positions are in samples at 16 kHz since call start. That is a
+//     logical clock the whole call shares, because every service sees the same
+//     audio — ordering by sample needs no clock at all.
+
+// ── data classification ─────────────────────────────────────────────────────
+//
+// Declared on the field, in the schema, so a sink can redact by reading the
+// descriptor instead of hard-coding a list that drifts. Every string field in
+// this file must carry one (checked by data/tests/test_events.py).
+
+enum Pii {
+  PII_NONE = 0;        // safe to keep as-is
+  PII_IDENTIFIER = 1;  // shipment ID, phone number: hash before bronze (joins still work)
+  PII_FREE_TEXT = 2;   // transcripts, spoken replies: may contain anything the caller said
+  PII_PERSONAL = 3;    // names, addresses: drop before bronze
+}
+
+extend google.protobuf.FieldOptions {
+  Pii pii = 50001;     // 50000-99999 is reserved for in-house options
+}
+
+// ── envelope ────────────────────────────────────────────────────────────────
+
+// Kafka key = call_id. Every event of a call lands in the same partition, so a
+// consumer sees one call's events in the order the broker received them.
+// That is arrival order, not causal order: STT and the orchestrator are
+// separate producers and race each other. `seq` gives order WITHIN a producer;
+// across producers, order by audio sample where it matters. A single total
+// order across services would need a single sequencer (DDIA ch.9) — we
+// deliberately do not have one on the call path.
+message Event {
+  // ULID. The idempotency key: producers retry, so delivery is at-least-once,
+  // and consumers dedupe on this to get effectively-once results.
+  string event_id = 1 [(pii) = PII_NONE];
+  string call_id = 2 [(pii) = PII_NONE];
+  string tenant_id = 3 [(pii) = PII_NONE];
+  Source source = 4;
+  // Per (call_id, source.service), starting at 1, no gaps. A gap means a lost
+  // event; a repeat means a retry that dedupe must absorb.
+  uint32 seq = 5;
+  // Event time, producer's wall clock (see Clocks above). Ingest time is the
+  // Kafka record timestamp, but only with message.timestamp.type=LogAppendTime
+  // on the topic — the default (CreateTime) is just the producer's clock again.
+  // The difference between the two is lag, plus clock skew.
+  int64 occurred_at_ms = 6;
+
+  oneof payload {
+    // call lifecycle
+    CallStarted call_started = 20;
+    CallEnded call_ended = 21;
+
+    // speech (emitted by the media edge from the STT stream)
+    SpeechStarted speech_started = 30;
+    SpeechEnded speech_ended = 31;
+    PartialTranscribed partial_transcribed = 32;  // high volume -> own topic
+    UtteranceTranscribed utterance_transcribed = 33;
+    SttSessionSummarized stt_session_summarized = 34;
+
+    // dialogue (orchestrator)
+    TurnDecided turn_decided = 40;
+    SlotFilled slot_filled = 41;
+    SlotRejected slot_rejected = 42;
+    EndpointingChanged endpointing_changed = 43;
+    ToolInvoked tool_invoked = 44;
+    LlmCompleted llm_completed = 45;
+    TurnCompleted turn_completed = 46;
+    BargedIn barged_in = 47;
+    Escalated escalated = 48;
+
+    // playback (media edge)
+    ClauseSynthesized clause_synthesized = 60;
+    FirstAudioPlayed first_audio_played = 61;
+
+    // anything
+    ErrorRaised error_raised = 90;
+  }
+}
+
+message Source {
+  Service service = 1;
+  string instance = 2 [(pii) = PII_NONE];  // hostname / pod name
+  string build = 3 [(pii) = PII_NONE];     // git sha: which code wrote this record
+}
+
+enum Service {
+  SERVICE_UNSPECIFIED = 0;
+  SERVICE_MEDIA_EDGE = 1;
+  SERVICE_STT = 2;
+  SERVICE_ORCHESTRATOR = 3;
+  SERVICE_MCP = 4;
+}
+
+// ── call lifecycle ──────────────────────────────────────────────────────────
+
+message CallStarted {
+  string tenant_slug = 1 [(pii) = PII_NONE];
+  string locale = 2 [(pii) = PII_NONE];
+  string caller_ref = 3 [(pii) = PII_IDENTIFIER];
+  // True for simulator traffic. Every metric must be filterable on this, or a
+  // load test silently becomes "our escalation rate doubled".
+  bool synthetic = 4;
+  string channel = 5 [(pii) = PII_NONE];   // webrtc | simulator
+}
+
+message CallEnded {
+  EndReason reason = 1;
+  uint32 duration_ms = 2;
+  uint32 turns = 3;
+}
+
+enum EndReason {
+  END_REASON_UNSPECIFIED = 0;
+  END_REASON_CALLER_HUNG_UP = 1;
+  END_REASON_ESCALATED = 2;
+  END_REASON_COMPLETED = 3;
+  END_REASON_ERROR = 4;
+}
+
+// ── speech ──────────────────────────────────────────────────────────────────
+
+message SpeechStarted {
+  uint64 at_sample = 1;
+}
+
+message SpeechEnded {
+  uint64 at_sample = 1;
+  uint32 silence_ms = 2;
+}
+
+// Unstable hypothesis. Kept for latency/revision analysis, never for content.
+message PartialTranscribed {
+  string text = 1 [(pii) = PII_FREE_TEXT];
+  uint32 infer_ms = 2;      // today computed in stt/session.py and dropped
+}
+
+message UtteranceTranscribed {
+  string text = 1 [(pii) = PII_FREE_TEXT];
+  uint64 start_sample = 2;
+  uint64 end_sample = 3;
+  string language = 4 [(pii) = PII_NONE];
+  // Non-speech finals ("[MUSIC]") are recorded, not silently dropped: how often
+  // STT hallucinates on noise is itself worth measuring.
+  bool ignored = 5;
+}
+
+message SttSessionSummarized {
+  uint32 chunks = 1;
+  float infer_p50_ms = 2;
+  float infer_max_ms = 3;
+  uint32 audio_ms = 4;
+  uint32 audio_gaps = 5;
+  string model = 6 [(pii) = PII_NONE];
+  string device = 7 [(pii) = PII_NONE];
+}
+
+// ── dialogue ────────────────────────────────────────────────────────────────
+
+enum TurnKind {
+  TURN_KIND_UNSPECIFIED = 0;
+  TURN_KIND_SAY = 1;              // scripted, no LLM
+  TURN_KIND_READY_FOR_TOOL = 2;   // slots complete -> tool -> grounded LLM
+  TURN_KIND_OPEN = 3;             // no flow matched -> knowledge-only LLM
+  TURN_KIND_ESCALATE = 4;
+}
+
+message TurnDecided {
+  uint32 turn_index = 1;          // 0 = greeting
+  TurnKind kind = 2;
+  string intent = 3 [(pii) = PII_NONE];
+  // Keyword-overlap score from flow.route(); threshold 0.4. Only set when
+  // routing ran (no active flow). Labels for the future intent classifier.
+  optional float route_score = 4;
+}
+
+message SlotFilled {
+  uint32 turn_index = 1;
+  string intent = 2 [(pii) = PII_NONE];
+  string slot = 3 [(pii) = PII_NONE];
+  string value = 4 [(pii) = PII_IDENTIFIER];
+  uint32 attempt = 5;             // 1 = first try
+}
+
+// "Where callers get stuck" is a GROUP BY over these.
+message SlotRejected {
+  uint32 turn_index = 1;
+  string intent = 2 [(pii) = PII_NONE];
+  string slot = 3 [(pii) = PII_NONE];
+  uint32 attempt = 4;
+  uint32 max_attempts = 5;
+  string utterance = 6 [(pii) = PII_FREE_TEXT];
+}
+
+message EndpointingChanged {
+  uint32 turn_index = 1;
+  uint32 silence_ms = 2;
+  string slot = 3 [(pii) = PII_NONE];
+}
+
+message ToolInvoked {
+  uint32 turn_index = 1;
+  string tool = 2 [(pii) = PII_NONE];
+  string outcome = 3 [(pii) = PII_NONE];   // tenant-defined: delivered | not_found | …
+  uint32 latency_ms = 4;
+  bool timed_out = 5;
+  // Full tool payload as JSON. PERSONAL because it can hold names (signed_by).
+  // Bronze drops it; the outcome above is what analytics needs.
+  string result_json = 6 [(pii) = PII_PERSONAL];
+}
+
+message LlmCompleted {
+  uint32 turn_index = 1;
+  string model = 2 [(pii) = PII_NONE];
+  string purpose = 3 [(pii) = PII_NONE];   // greeting | grounded | open
+  uint32 ttft_ms = 4;
+  uint32 total_ms = 5;
+  uint32 prompt_tokens = 6;
+  uint32 completion_tokens = 7;
+  bool cancelled = 8;                      // barge-in cut it short
+}
+
+message TurnCompleted {
+  uint32 turn_index = 1;
+  uint32 total_ms = 2;
+  uint32 clauses = 3;
+  string spoken_text = 4 [(pii) = PII_FREE_TEXT];  // echoes caller data back
+}
+
+message BargedIn {
+  uint32 turn_index = 1;
+  uint64 at_sample = 2;
+}
+
+message Escalated {
+  uint32 turn_index = 1;
+  string intent = 2 [(pii) = PII_NONE];
+  string reason = 3 [(pii) = PII_NONE];    // max_attempts | requested | …
+}
+
+// ── playback ────────────────────────────────────────────────────────────────
+
+message ClauseSynthesized {
+  uint32 say_seq = 1;                      // Directive.Say.seq
+  uint32 chars = 2;
+  uint32 tts_ms = 3;
+  uint32 audio_bytes = 4;
+}
+
+// End of the caller's final transcript -> first byte of reply audio. The number
+// the whole latency budget in TECHNICAL-TIPS.md §8 is about.
+message FirstAudioPlayed {
+  uint32 final_to_first_audio_ms = 1;
+}
+
+// ── errors ──────────────────────────────────────────────────────────────────
+
+message ErrorRaised {
+  string component = 1 [(pii) = PII_NONE];  // stt_stream | tts | llm | tool | …
+  string code = 2 [(pii) = PII_NONE];
+  string detail = 3 [(pii) = PII_FREE_TEXT]; // exception text can echo inputs
+}

@@ -1,0 +1,18 @@
+# buf config for the orchestrator contract. CI runs `buf lint` and, on merge
+# requests, `buf breaking` against main.
+version: v2
+lint:
+  use:
+    - STANDARD
+  except:
+    # Renaming these would change the wire contract the media edge already uses
+    # (/aicallcenter.orchestrator.v1.Orchestrator/Session). Revisit at v2.
+    - PACKAGE_DIRECTORY_MATCH
+    - SERVICE_SUFFIX
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    # WIRE_JSON: breaks clients on the wire (field numbers, types) or in JSON
+    # (field names). Generated-code renames that keep the wire intact are allowed.
+    - WIRE_JSON

@@ -1,0 +1,9 @@
+# Used instead of a root .dockerignore when building with this Dockerfile.
+# Allowlist: the build context is the whole repo, so send only what the image needs.
+*
+!services/orchestrator/requirements.txt
+!services/orchestrator/app
+!services/orchestrator/gen
+!tenants
+**/__pycache__
+tenants/validate.py

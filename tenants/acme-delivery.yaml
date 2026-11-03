@@ -1,0 +1,82 @@
+# ── Acme Delivery ────────────────────────────────────────────────────────────
+# Demo tenant 1: FLOW-HEAVY, transactional.
+# Point it proves: the orchestrator ENFORCES the process. You cannot talk your
+# way past the shipment ID, and a malformed one is rejected and re-asked.
+
+tenant_id: acme-delivery
+display_name: Acme Delivery
+slug: acme            # -> https://…/w/acme  (identifier, NOT a secret)
+locale: en-US
+
+voice:
+  speaker: Jason      # Magpie: Aria | Jason | John | Leo | Sofia
+  greeting: "Acme Delivery, this is the automated assistant. How can I help?"
+
+persona: |
+  You are the phone assistant for Acme Delivery, a parcel courier.
+  Be brisk and practical — callers want a status, not a chat.
+  Never guess a delivery date. If a tool gives you no data, say so plainly.
+
+# Defaults; a slot can override per-step (see shipment_id below).
+endpointing:
+  silence_ms: 900
+  min_speech_ms: 200
+
+flows:
+  - intent: track_shipment
+    # Used for routing. The LLM classifies against these; they are examples,
+    # not an exhaustive list.
+    utterances:
+      - "where is my parcel"
+      - "track my delivery"
+      - "has my package shipped"
+      - "my order hasn't arrived"
+
+    # ENFORCED by the orchestrator. The LLM does the talking, but the flow
+    # does not advance until every required slot is filled and valid.
+    slots:
+      - name: shipment_id
+        type: alphanumeric
+        length: 10
+        prompt: "Can I take your shipment ID? It's ten characters, on your confirmation email."
+        reprompt: "Sorry, I need the full ten-character shipment ID."
+        on_invalid: "That doesn't look right — it should be ten letters and numbers, like AC4471X209."
+        pattern: '^[A-Za-z0-9]{10}$'
+        max_attempts: 3
+        # People pause mid-code. Give them room, or we cut them off at "AC44…".
+        endpointing:
+          silence_ms: 1400
+
+    tool: lookup_shipment
+
+    # One branch per tool outcome. Guidance for the LLM, not a fixed script —
+    # it rewrites these naturally, but cannot invent an outcome that did not occur.
+    outcomes:
+      delivered:   "Tell them it was delivered, with the date and who signed."
+      in_transit:  "Give the current location and the estimated delivery date."
+      delayed:     "Apologise briefly, give the reason and the new estimate. Offer to escalate."
+      not_found:   "Say you can't find that ID, ask them to double-check it. Do not speculate."
+
+  - intent: reschedule_delivery
+    utterances: ["change my delivery date", "reschedule", "I won't be home"]
+    requires_flow: track_shipment     # must identify the parcel first
+    tool: reschedule_delivery
+    outcomes:
+      ok:      "Confirm the new date back to them."
+      too_late: "Explain it's already out for delivery and cannot be changed today."
+
+tools:
+  - lookup_shipment
+  - reschedule_delivery
+
+knowledge:
+  namespace: acme-delivery
+  sources: []          # flow-driven tenant; no document knowledge in the demo
+
+guardrails:
+  - "Never disclose the recipient's address — only the delivery status."
+  - "Never promise a delivery time that a tool did not return."
+
+escalation:
+  when: ["caller asks for a human", "slot failed max_attempts", "outcome is delayed and caller is unhappy"]
+  message: "Let me put you through to someone who can help."

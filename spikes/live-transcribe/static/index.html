@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live transcribe — Simul-Whisper</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #16181d; --dim: #6b7280; --line: #d9dce3; --bg: #fbfbfc;
+    --accent: #2563eb; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8eaed; --dim: #9aa2af; --line: #2a2f3a; --bg: #14161a; --accent: #7aa2f7; --ok: #4ade80; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 15px/1.6 ui-sans-serif, system-ui, sans-serif;
+    margin: 0; padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
+  }
+  main { max-width: 52rem; margin: 0 auto; }
+  h1 { font-size: 1.15rem; margin: 0 0 .2rem; }
+  .sub { color: var(--dim); margin: 0 0 1.5rem; font-size: .9rem; }
+
+  .bar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+  button {
+    font: inherit; padding: .5rem 1.1rem; border-radius: .45rem; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--fg);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button[disabled] { opacity: .45; cursor: default; }
+  #state { font-variant: small-caps; color: var(--dim); }
+  meter { width: 7rem; height: 8px; }
+
+  #transcript {
+    border: 1px solid var(--line); border-radius: .55rem; padding: 1.1rem 1.25rem;
+    min-height: 9rem; background: color-mix(in srgb, var(--fg) 3%, transparent);
+    font-size: 1.05rem; line-height: 1.7;
+  }
+  #transcript:empty::before { content: "Transcript appears here as you speak…"; color: var(--dim); }
+  .fresh { background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: .2rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: .6rem; margin-top: 1rem; }
+  .stat { border: 1px solid var(--line); border-radius: .45rem; padding: .55rem .7rem; }
+  .stat b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .stat span { font-size: .72rem; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+  .warn b { color: #b45309; }
+
+  #log {
+    margin-top: 1rem; font-family: ui-monospace, monospace; font-size: 11.5px;
+    color: var(--dim); white-space: pre-wrap; max-height: 11rem; overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Live transcribe</h1>
+<p class="sub">Mic → WebRTC → aiortc → Simul-Whisper. Partial text comes back over the peer connection's data channel, mid-utterance.</p>
+
+<div class="bar">
+  <button id="start" class="primary">Start mic</button>
+  <button id="stop" disabled>Stop</button>
+  <span id="state">idle</span>
+  <meter id="meter" min="0" max="1" value="0" title="input level"></meter>
+</div>
+
+<div id="transcript"></div>
+
+<div class="stats">
+  <div class="stat"><b id="s-audio">0.0s</b><span>audio sent</span></div>
+  <div class="stat"><b id="s-infer">—</b><span>infer / chunk</span></div>
+  <div class="stat"><b id="s-words">0</b><span>words</span></div>
+  <div class="stat" id="s-backlog-box"><b id="s-backlog">0</b><span>backlog chunks</span></div>
+  <div class="stat"><b id="s-first">—</b><span>first word</span></div>
+</div>
+
+<div id="log"></div>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const t0 = performance.now();
+let pc, stream, audioCtx, rafId, chan, tStart = null, firstWordAt = null;
+
+function log(msg) {
+  const at = ((performance.now() - t0) / 1000).toFixed(2).padStart(6);
+  $('log').textContent += `[${at}s] ${msg}\n`;
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function waitForIceGathering(pc) {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(res => {
+    const check = () => {
+      if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', check); res();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', check);
+  });
+}
+
+function levelMeter(stream) {
+  audioCtx = new AudioContext();
+  const an = audioCtx.createAnalyser();
+  an.fftSize = 512;
+  audioCtx.createMediaStreamSource(stream).connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  const tick = () => {
+    an.getByteTimeDomainData(buf);
+    let peak = 0;
+    for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
+    $('meter').value = peak;
+    rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+// Render the transcript with the newest fragment highlighted, so it is obvious
+// the text is arriving incrementally rather than in one lump at the end.
+function render(text, delta) {
+  const el = $('transcript');
+  const stable = delta ? text.slice(0, text.length - delta.length) : text;
+  el.textContent = '';
+  el.append(document.createTextNode(stable));
+  if (delta) {
+    const span = document.createElement('span');
+    span.className = 'fresh';
+    span.textContent = delta;
+    el.append(span);
+  }
+  $('s-words').textContent = (text.trim().match(/\S+/g) || []).length;
+}
+
+function onMessage(ev) {
+  const m = JSON.parse(ev.data);
+  if (m.type === 'ready') {
+    log(`server ready — device ${m.device}, ${m.segment_length}s chunks`);
+    return;
+  }
+  if (m.type === 'done') {
+    log(`done — ${m.chunks} chunks, infer p50 ${m.infer_p50_ms} ms, max ${m.infer_max_ms} ms`);
+    $('state').textContent = 'finished';
+    return;
+  }
+  if (m.audio_s != null) $('s-audio').textContent = m.audio_s.toFixed(1) + 's';
+  if (m.infer_ms != null) $('s-infer').textContent = m.infer_ms + ' ms';
+  if (m.backlog_chunks != null) {
+    $('s-backlog').textContent = m.backlog_chunks;
+    $('s-backlog-box').classList.toggle('warn', m.backlog_chunks > 2);
+  }
+  if (m.type === 'partial') {
+    if (firstWordAt === null && m.text.trim()) {
+      firstWordAt = (performance.now() - tStart) / 1000;
+      $('s-first').textContent = firstWordAt.toFixed(1) + 's';
+    }
+    render(m.text, m.delta);
+  }
+}
+
+async function start() {
+  $('start').disabled = true;
+  $('state').textContent = 'starting';
+  $('transcript').textContent = '';
+  firstWordAt = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    levelMeter(stream);
+    log(`mic: ${stream.getAudioTracks()[0].label}`);
+
+    pc = new RTCPeerConnection();
+    pc.addEventListener('connectionstatechange', () => {
+      log(`connection: ${pc.connectionState}`);
+      $('state').textContent = pc.connectionState;
+    });
+
+    // The server sends transcripts back down this channel.
+    chan = pc.createDataChannel('transcript');
+    chan.onopen = () => log('data channel open');
+    chan.onmessage = onMessage;
+
+    pc.addTransceiver(stream.getAudioTracks()[0], { direction: 'sendonly', streams: [stream] });
+
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGathering(pc);
+
+    const res = await fetch('/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    await pc.setRemoteDescription(await res.json());
+    tStart = performance.now();
+    log('streaming — speak now');
+    $('stop').disabled = false;
+  } catch (err) {
+    log(`ERROR: ${err.message}`);
+    $('state').textContent = 'failed';
+    $('start').disabled = false;
+  }
+}
+
+function stop() {
+  $('stop').disabled = true;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (audioCtx) audioCtx.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  setTimeout(() => pc && pc.close(), 1500);  // let the tail chunk flush back
+  $('state').textContent = 'stopping';
+  $('start').disabled = false;
+}
+
+$('start').addEventListener('click', start);
+$('stop').addEventListener('click', stop);
+
+// ?autostart=1 — used by the headless driver
+const qs = new URLSearchParams(location.search);
+if (qs.has('autostart')) start();
+if (qs.has('stopafter')) setTimeout(stop, parseFloat(qs.get('stopafter')) * 1000);
+</script>
+</body>
+</html>
