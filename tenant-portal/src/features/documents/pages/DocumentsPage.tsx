@@ -1,7 +1,6 @@
 /**
- * Knowledge documents a tenant uploads for its voice agent, plus the session
- * links it shares with customers. Built step by step; this step wires the page
- * to the documents service and shows loading / empty / error states.
+ * Knowledge documents a tenant uploads for its voice agent (upload card +
+ * table), served by the documents service. Session links will join this page.
  */
 import { AppHeader } from '@/components/layout/AppHeader';
 import { Stagger, StaggerItem } from '@/components/motion';
@@ -12,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { messages } from '@/i18n';
 import { userMessage } from '@/lib/errors';
 import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
+import { DocumentsTable } from '../components/DocumentsTable';
 import { UploadCard } from '../components/UploadCard';
 import { useDocuments } from '../hooks/useDocuments';
 
@@ -69,14 +69,14 @@ export function DocumentsPage() {
                 ) : documents.data.count === 0 ? (
                   <p className="text-sm text-muted-foreground">{t.empty}</p>
                 ) : (
-                  // Placeholder until the table lands in the next step.
-                  <ul className="divide-y text-sm">
-                    {documents.data.results.map((doc) => (
-                      <li key={doc.id} className="py-2">
-                        {doc.original_filename}
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <DocumentsTable documents={documents.data.results} />
+                    {documents.data.count > documents.data.results.length && (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {t.showingLatest(documents.data.results.length, documents.data.count)}
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

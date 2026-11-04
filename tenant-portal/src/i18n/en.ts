@@ -443,6 +443,20 @@ export const en = {
     empty: 'No documents yet.',
     loadFailed: 'We couldn’t load your documents',
     retry: 'Try again',
+    showingLatest: (shown: number, total: number) => `Showing the latest ${shown} of ${total} documents.`,
+    table: {
+      name: 'Name',
+      type: 'Type',
+      size: 'Size',
+      uploaded: 'Uploaded',
+      status: 'Status',
+    },
+    status: {
+      pending: 'Pending',
+      processing: 'Processing',
+      completed: 'Completed',
+      failed: 'Failed',
+    },
     upload: {
       title: 'Upload documents',
       drop: 'Drag files here, or click to browse',

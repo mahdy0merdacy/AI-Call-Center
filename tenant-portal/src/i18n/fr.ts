@@ -454,6 +454,20 @@ export const fr: Messages = {
     empty: 'Aucun document pour le moment.',
     loadFailed: 'Impossible de charger vos documents',
     retry: 'Réessayer',
+    showingLatest: (shown: number, total: number) => `Affichage des ${shown} derniers documents sur ${total}.`,
+    table: {
+      name: 'Nom',
+      type: 'Type',
+      size: 'Taille',
+      uploaded: 'Importé le',
+      status: 'Statut',
+    },
+    status: {
+      pending: 'En attente',
+      processing: 'Traitement',
+      completed: 'Terminé',
+      failed: 'Échec',
+    },
     upload: {
       title: 'Importer des documents',
       drop: 'Glissez des fichiers ici, ou cliquez pour parcourir',
