@@ -1,4 +1,5 @@
 import { networkFailureHandler } from '../network';
+import { documentsHandlers } from './documents';
 import { googleHandlers } from './google';
 import { loginHandlers } from './login';
 import { mfaSetupHandlers } from './mfaSetup';
@@ -17,4 +18,5 @@ export const handlers = [
   ...googleHandlers,
   ...mfaSetupHandlers,
   ...profileHandlers,
+  ...documentsHandlers,
 ];

@@ -8,6 +8,8 @@ import {
   RequireCompleteAccount,
   RequireMfaSetupPending,
   RequireOnboardingPending,
+  RequireRole,
+  RequireTenant,
 } from './guards';
 import { paths } from './paths';
 import { RootLayout } from './RootLayout';
@@ -101,6 +103,24 @@ export const router = createBrowserRouter([
                 path: paths.dashboard,
                 lazy: () =>
                   import('@/features/dashboard/pages/DashboardPage').then((m) => ({ Component: m.DashboardPage })),
+              },
+              {
+                // The documents service only accepts company admins (it answers 403 to anyone else).
+                element: <RequireRole role="tenant_admin" />,
+                children: [
+                  {
+                    element: <RequireTenant />,
+                    children: [
+                      {
+                        path: paths.documents,
+                        lazy: () =>
+                          import('@/features/documents/pages/DocumentsPage').then((m) => ({
+                            Component: m.DocumentsPage,
+                          })),
+                      },
+                    ],
+                  },
+                ],
               },
               {
                 path: paths.profile,

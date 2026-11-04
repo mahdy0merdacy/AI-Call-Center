@@ -48,6 +48,11 @@ export function AppHeader() {
             <NavLink to={paths.dashboard} className={navLinkClass}>
               {messages.nav.dashboard}
             </NavLink>
+            {user.role === 'tenant_admin' && user.tenant_id !== null && (
+              <NavLink to={paths.documents} className={navLinkClass}>
+                {messages.nav.documents}
+              </NavLink>
+            )}
             <NavLink to={paths.profile} className={navLinkClass}>
               {messages.nav.profile}
             </NavLink>

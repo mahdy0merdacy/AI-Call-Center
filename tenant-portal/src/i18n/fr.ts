@@ -387,6 +387,7 @@ export const fr: Messages = {
   },
   nav: {
     dashboard: 'Tableau de bord',
+    documents: 'Documents',
     profile: 'Paramètres du compte',
     main: 'Principal',
     openProfile: (name: string) => `Paramètres du compte de ${name}`,
@@ -444,5 +445,14 @@ export const fr: Messages = {
     confirmBody: 'Vous serez déconnecté de ce navigateur et renvoyé vers la page de connexion.',
     confirmCancel: 'Rester connecté',
     confirmAction: 'Se déconnecter',
+  },
+  documents: {
+    title: 'Documents',
+    description: 'Importez les fichiers que votre agent IA doit connaître.',
+    listTitle: 'Vos documents',
+    count: (n: number) => (n <= 1 ? `${n} document` : `${n} documents`),
+    empty: 'Aucun document pour le moment.',
+    loadFailed: 'Impossible de charger vos documents',
+    retry: 'Réessayer',
   },
 };

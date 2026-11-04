@@ -62,6 +62,13 @@ rawClient.interceptors.response.use(undefined, (error: unknown) =>
 export const api: AxiosInstance = axios.create(baseConfig);
 trackReachability(api);
 
+/**
+ * Client for the documents service (a separate backend). It sends the same
+ * bearer token and gets the same silent refresh and suspension handling.
+ */
+export const documentsApi: AxiosInstance = axios.create({ ...baseConfig, baseURL: env.documentsRoot });
+trackReachability(documentsApi);
+
 /* ------------------------------------------------------------------ */
 /* Token responses                                                     */
 /* ------------------------------------------------------------------ */
@@ -162,56 +169,65 @@ function bearerFrom(config: AxiosRequestConfig): string | null {
   return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
 }
 
-api.interceptors.request.use((config) => {
-  const token = tokenStore.get();
-  if (token && !config.headers.has('Authorization')) {
+/**
+ * Bearer token, refresh-and-replay on 401 and suspension handling. Installed on
+ * every authenticated client (the auth backend and the documents service).
+ */
+function installAuth(client: AxiosInstance): void {
+  client.interceptors.request.use((config) => {
+    const token = tokenStore.get();
+    if (token && !config.headers.has('Authorization')) {
+      config.headers.set('Authorization', `Bearer ${token}`);
+    }
+    return config;
+  });
+
+  client.interceptors.response.use(undefined, async (error: unknown) => {
+    if (!axios.isAxiosError(error) || !error.config) {
+      return Promise.reject(toApiError(error));
+    }
+
+    const config = error.config;
+    const apiError = toApiError(error);
+
+    // Tenant suspended mid-session: the backend blocks immediately, even with a valid token.
+    if (isSuspendedError(apiError) && bearerFrom(config)) {
+      tokenStore.clear();
+      authEvents.emit('tenant-suspended');
+      return Promise.reject(apiError);
+    }
+
+    if (apiError.status !== 401 || config.skipAuthRefresh || config._retried) {
+      return Promise.reject(apiError);
+    }
+
+    const sentToken = bearerFrom(config);
+    if (!sentToken) {
+      // Anonymous request rejected: nothing to refresh.
+      return Promise.reject(apiError);
+    }
+
+    config._retried = true;
+
+    let token: string;
+    try {
+      // Another request may already have rotated the token while this one was in flight.
+      const current = tokenStore.get();
+      token = current && current !== sentToken ? current : await refreshAccessToken();
+    } catch (refreshError) {
+      const refreshApiError = toApiError(refreshError);
+      handleRefreshFailure(refreshApiError);
+      return Promise.reject(isTransient(refreshApiError) ? refreshApiError : apiError);
+    }
+
     config.headers.set('Authorization', `Bearer ${token}`);
-  }
-  return config;
-});
+    // A failure of the replay goes through this interceptor again (already `_retried`).
+    return client.request(config);
+  });
+}
 
-api.interceptors.response.use(undefined, async (error: unknown) => {
-  if (!axios.isAxiosError(error) || !error.config) {
-    return Promise.reject(toApiError(error));
-  }
-
-  const config = error.config;
-  const apiError = toApiError(error);
-
-  // Tenant suspended mid-session: the backend blocks immediately, even with a valid token.
-  if (isSuspendedError(apiError) && bearerFrom(config)) {
-    tokenStore.clear();
-    authEvents.emit('tenant-suspended');
-    return Promise.reject(apiError);
-  }
-
-  if (apiError.status !== 401 || config.skipAuthRefresh || config._retried) {
-    return Promise.reject(apiError);
-  }
-
-  const sentToken = bearerFrom(config);
-  if (!sentToken) {
-    // Anonymous request rejected: nothing to refresh.
-    return Promise.reject(apiError);
-  }
-
-  config._retried = true;
-
-  let token: string;
-  try {
-    // Another request may already have rotated the token while this one was in flight.
-    const current = tokenStore.get();
-    token = current && current !== sentToken ? current : await refreshAccessToken();
-  } catch (refreshError) {
-    const refreshApiError = toApiError(refreshError);
-    handleRefreshFailure(refreshApiError);
-    return Promise.reject(isTransient(refreshApiError) ? refreshApiError : apiError);
-  }
-
-  config.headers.set('Authorization', `Bearer ${token}`);
-  // A failure of the replay goes through this interceptor again (already `_retried`).
-  return api.request(config);
-});
+installAuth(api);
+installAuth(documentsApi);
 
 function isTransient(error: ApiRequestError): boolean {
   return error.kind === 'network' || error.kind === 'timeout' || error.kind === 'server';

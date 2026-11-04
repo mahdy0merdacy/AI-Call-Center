@@ -4,6 +4,7 @@
  * refresh token lives in an HttpOnly cookie the frontend cannot read.
  */
 import type { AuthProvider, Role } from '@/features/auth/types';
+import { resetDocumentsStore } from './documentsStore';
 
 export interface MockUser {
   id: string;
@@ -227,6 +228,7 @@ export function persist(): void {
 export function resetMockDb(): void {
   Object.assign(db, seed());
   persist();
+  resetDocumentsStore();
 }
 
 export function findUserById(id: string): MockUser | undefined {

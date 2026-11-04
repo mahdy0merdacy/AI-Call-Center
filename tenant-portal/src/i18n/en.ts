@@ -377,6 +377,7 @@ export const en = {
   },
   nav: {
     dashboard: 'Dashboard',
+    documents: 'Documents',
     profile: 'Account settings',
     main: 'Main',
     openProfile: (name: string) => `Account settings for ${name}`,
@@ -433,6 +434,15 @@ export const en = {
     confirmBody: 'You’ll be signed out of this browser and taken back to the sign-in page.',
     confirmCancel: 'Stay signed in',
     confirmAction: 'Sign out',
+  },
+  documents: {
+    title: 'Documents',
+    description: 'Upload the files your AI agent should know about.',
+    listTitle: 'Your documents',
+    count: (n: number) => (n === 1 ? '1 document' : `${n} documents`),
+    empty: 'No documents yet.',
+    loadFailed: 'We couldn’t load your documents',
+    retry: 'Try again',
   },
 } as const;
 
