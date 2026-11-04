@@ -9,10 +9,7 @@ import {
   RequireMfaSetupPending,
   RequireOnboardingPending,
   RequireRole,
-<<<<<<< HEAD
-=======
   RequireTenant,
->>>>>>> origin/feat/tenant-portal-auth
 } from './guards';
 import { paths } from './paths';
 import { RootLayout } from './RootLayout';
