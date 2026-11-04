@@ -11,6 +11,7 @@ export const paths = {
   onboarding: '/onboarding',
   mfaSetup: '/mfa/setup',
   dashboard: '/dashboard',
+  documents: '/documents',
   profile: '/profile',
   adminTenants: '/admin/tenants',
   suspended: '/suspended',

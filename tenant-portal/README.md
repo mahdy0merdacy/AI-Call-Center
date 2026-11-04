@@ -9,6 +9,11 @@ account on the AI Call Center platform.
 > yet**. Until it lands, run the portal against the bundled MSW mock backend
 > (`npm run dev:mock`), which implements the same contract.
 
+Once signed in, a company admin also manages the **knowledge documents** their voice
+agent uses and the **session links** they share with customers. That page talks to a
+separate backend, the documents service (`services/documents`). See
+[Documents](#documents).
+
 ## Quick start
 
 ```bash
@@ -25,6 +30,8 @@ Other scripts: `npm run typecheck`, `npm run build`, `npm run build:mock`, `npm 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `''` (same origin) | Backend origin. Endpoints resolve under `${VITE_API_BASE_URL}/api/`. |
+| `VITE_DOCUMENTS_API_URL` | `''` (same origin) | Documents service origin. Its endpoints resolve under `${VITE_DOCUMENTS_API_URL}/api/`. |
+| `VITE_MAX_UPLOAD_MB` | `25` | Largest upload the portal accepts before sending. Keep it equal to the service's `MAX_UPLOAD_SIZE_MB`; the service enforces its own limit anyway. |
 | `VITE_GOOGLE_AUTH_URL` | `/_allauth/browser/v1/auth/provider/redirect` | allauth Google entry point used by "Continue with Google". |
 | `VITE_GOOGLE_AUTH_METHOD` | `post` | `post`: allauth headless provider redirect (a form POST with `provider`, `callback_url`, `process`). `get`: classic `/accounts/google/login/?process=login&next=…`. |
 | `VITE_APP_NAME` | `AI Call Center` | Product name shown in the UI. |
@@ -87,6 +94,11 @@ Other scripts: `npm run typecheck`, `npm run build`, `npm run build:mock`, `npm 
   | Security tab → change password | other sessions revoked; this browser stays signed in |
   | `/profile?tab=security` as Léa Martin (Google) | "Signed in with Google" card instead of the password form |
   | Sign in as `platform-new@aicc.test` | forced to `/mfa/setup`. The QR code is decorative in mock mode; confirm with `123456`. You get 10 one-time backup codes, then can sign in again with MFA |
+  | `/documents` as `admin@acme.test` | 3 seeded documents (completed, processing, failed) and 4 session links (active, active with expiry, deactivated, expired) |
+  | `/documents` as `admin@maisonverte.test` | empty states for both lists (each tenant only sees its own data) |
+  | `/documents` as `platform@aicc.test` | no *Documents* link; opening the URL goes to `/forbidden` |
+  | Upload a `.png`, an empty file or one over 25 MB | refused in the browser with a toast (drag it in: the file picker already hides unsupported types) |
+  | Create a session link with a past date | "Choose a date and time in the future." |
 
 - **Mock devtools** (bottom-right button, mock mode only) has two tabs:
   - **Scenarios**:
@@ -98,7 +110,7 @@ Other scripts: `npm run typecheck`, `npm run build`, `npm run build:mock`, `npm 
     | Suspend my tenant | the next request gets 403 `tenant_suspended` → `/suspended` |
     | Simulate network failure | every API call fails like a dropped connection → banner, and the session is kept |
     | Throw a render error | the error boundary screen |
-    | Reset mock data | back to the seed, signed out |
+    | Reset mock data | back to the seed, signed out (documents and session links included) |
 
   - **Inbox**: emails the mock backend "sent" (verification, password reset), each
     with an *Open link* button. Tokens are never logged to the console.
@@ -109,6 +121,49 @@ English and French ship together: Maison Verte runs entirely in French. The lang
 comes from the visitor's browser, or from the EN/FR toggle (stored in
 `localStorage`). Copy lives in `src/i18n/en.ts` and `src/i18n/fr.ts`. The
 `Messages` type makes the build fail if a French string is missing.
+
+## Documents
+
+`/documents` (company admins only) has three parts:
+
+- **Upload**: click or drag in one or several files. Accepted types are `pdf`, `docx`,
+  `xlsx`, `csv` and `txt`, up to `VITE_MAX_UPLOAD_MB`. The browser checks the type, an
+  empty file, the size and the name length first (`features/documents/validation.ts`).
+  The service repeats those checks and also sniffs the file's content, so it stays the
+  source of truth and its message is shown when it refuses a file. Files go up one
+  request at a time, with a progress bar.
+- **Documents table**: name, type, size, upload date and an ingestion status badge
+  (`pending`, `processing`, `completed`, `failed`; a failed document shows its error).
+  Only the latest 50 are listed, and the page says so when there are more.
+- **Session links**: create a link with an optional expiry, copy it, and deactivate it
+  (after a confirmation: the service cannot turn a link back on). *Expired* is derived
+  in the browser from `expires_at`; the service only stores `is_active`.
+
+The documents service is a different backend, so `documentsApi` in `src/lib/apiClient.ts`
+has its own base URL (`VITE_DOCUMENTS_API_URL`). It shares the auth client's bearer
+token, silent refresh and suspension handling (`installAuth`).
+
+| Method | Path | Used for |
+| --- | --- | --- |
+| `GET` | `/api/documents/?limit=50` | the table (`{count, next, previous, results}`) |
+| `POST` | `/api/documents/` | upload (`multipart/form-data`, field `file`) |
+| `GET` | `/api/session-links/?limit=50` | the links list |
+| `POST` | `/api/session-links/` | create (`{expires_at?}`, ISO datetime in the future) |
+| `POST` | `/api/session-links/<id>/deactivate/` | deactivate (idempotent) |
+
+Running against the real service (`npm run dev`) needs three things on the backend side:
+
+1. The auth service must sign access tokens with **RS256**, with `iss` = `tenant-portal`,
+   `aud` = `ai-voice-platform`, a `role` claim and a **UUID** `tenant_id` claim. The mock's
+   tokens are unsigned and its tenant ids are slugs (`acme-delivery`), so they only work
+   against the mock.
+2. The documents service's `JWT_PUBLIC_KEY` must be that auth service's public key.
+3. Its `CORS_ALLOWED_ORIGINS` must include this portal's origin
+   (`http://localhost:5173` in development).
+
+The mock (`src/mocks/handlers/documents.ts`, `sessionLinks.ts`) applies the same rules
+as the service, keeps its data per tenant in `sessionStorage`, and does not sniff file
+content. Stored mock uploads keep only the name and size.
 
 ## CI
 
@@ -252,6 +307,7 @@ src/
   features/
     auth/         api, components, hooks, mfa, pages, schemas, session, types
     dashboard/    placeholder dashboard (out of scope; exercises the flow)
+    documents/    documents page: upload, table, session links (documents service)
     profile/      account settings: profile, security, session (proposed API)
     system/       global screens (404, 403, suspended)
   i18n/           copy dictionaries (en, fr) + locale detection
