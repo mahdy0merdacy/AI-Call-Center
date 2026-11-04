@@ -88,6 +88,28 @@ export function listTenantDocuments(tenantId: string): MockDocument[] {
   return [...(state[tenantId] ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+export function addTenantDocument(
+  tenantId: string,
+  file: { name: string; size: number },
+  contentType: string,
+): MockDocument {
+  const now = new Date().toISOString();
+  const created: MockDocument = {
+    id: crypto.randomUUID(),
+    tenant_id: tenantId,
+    original_filename: file.name,
+    content_type: contentType,
+    file_size: file.size,
+    ingestion_status: 'pending',
+    error_message: '',
+    created_at: now,
+    updated_at: now,
+  };
+  (state[tenantId] ??= []).push(created);
+  persist();
+  return created;
+}
+
 export function resetDocumentsStore(): void {
   for (const key of Object.keys(state)) delete state[key];
   Object.assign(state, seed());

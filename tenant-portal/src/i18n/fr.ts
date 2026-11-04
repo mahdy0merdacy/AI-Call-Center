@@ -454,5 +454,21 @@ export const fr: Messages = {
     empty: 'Aucun document pour le moment.',
     loadFailed: 'Impossible de charger vos documents',
     retry: 'Réessayer',
+    upload: {
+      title: 'Importer des documents',
+      drop: 'Glissez des fichiers ici, ou cliquez pour parcourir',
+      dropActive: 'Déposez pour importer',
+      hint: (mb: number) => `PDF, DOCX, XLSX, CSV ou TXT, ${mb} Mo maximum chacun.`,
+      uploading: (name: string, index: number, total: number) =>
+        total > 1 ? `Import de ${name} (${index} sur ${total})` : `Import de ${name}`,
+      uploaded: (name: string) => `${name} importé`,
+      failed: (name: string) => `Impossible d’importer ${name}`,
+      problems: {
+        unsupported: 'Ce type de fichier n’est pas pris en charge. Utilisez PDF, DOCX, XLSX, CSV ou TXT.',
+        empty: 'Le fichier est vide.',
+        tooLarge: (mb: number) => `Le fichier dépasse ${mb} Mo.`,
+        nameTooLong: 'Le nom du fichier est trop long.',
+      },
+    },
   },
 };

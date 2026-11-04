@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { messages } from '@/i18n';
 import { userMessage } from '@/lib/errors';
 import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
+import { UploadCard } from '../components/UploadCard';
 import { useDocuments } from '../hooks/useDocuments';
 
 const t = messages.documents;
@@ -28,6 +29,10 @@ export function DocumentsPage() {
           <StaggerItem>
             <h1 className="text-3xl font-bold">{t.title}</h1>
             <p className="mt-1 text-muted-foreground">{t.description}</p>
+          </StaggerItem>
+
+          <StaggerItem>
+            <UploadCard />
           </StaggerItem>
 
           <StaggerItem>

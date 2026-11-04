@@ -9,6 +9,8 @@ const envSchema = z.object({
   VITE_API_BASE_URL: z.string().default(''),
   // The documents service is a separate backend from the auth service.
   VITE_DOCUMENTS_API_URL: z.string().default(''),
+  // Must match the documents service's MAX_UPLOAD_SIZE_MB (the server enforces it anyway).
+  VITE_MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),
   VITE_GOOGLE_AUTH_URL: z.string().default('/_allauth/browser/v1/auth/provider/redirect'),
   // 'post' = allauth headless provider redirect (form POST), 'get' = classic /accounts/google/login/.
   VITE_GOOGLE_AUTH_METHOD: z.enum(['post', 'get']).default('post'),
@@ -37,6 +39,7 @@ export const env = {
   apiRoot: `${apiBaseUrl}/api`,
   /** Root of the documents service, e.g. `http://localhost:8001/api`. */
   documentsRoot: `${documentsBaseUrl}/api`,
+  maxUploadMb: parsed.data.VITE_MAX_UPLOAD_MB,
   googleAuthUrl: parsed.data.VITE_GOOGLE_AUTH_URL,
   googleAuthMethod: parsed.data.VITE_GOOGLE_AUTH_METHOD,
   appName: parsed.data.VITE_APP_NAME,

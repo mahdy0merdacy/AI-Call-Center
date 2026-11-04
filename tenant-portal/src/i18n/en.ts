@@ -443,6 +443,22 @@ export const en = {
     empty: 'No documents yet.',
     loadFailed: 'We couldn’t load your documents',
     retry: 'Try again',
+    upload: {
+      title: 'Upload documents',
+      drop: 'Drag files here, or click to browse',
+      dropActive: 'Drop to upload',
+      hint: (mb: number) => `PDF, DOCX, XLSX, CSV or TXT, up to ${mb} MB each.`,
+      uploading: (name: string, index: number, total: number) =>
+        total > 1 ? `Uploading ${name} (${index} of ${total})` : `Uploading ${name}`,
+      uploaded: (name: string) => `${name} uploaded`,
+      failed: (name: string) => `Couldn’t upload ${name}`,
+      problems: {
+        unsupported: 'This file type isn’t supported. Use PDF, DOCX, XLSX, CSV or TXT.',
+        empty: 'The file is empty.',
+        tooLarge: (mb: number) => `The file is larger than ${mb} MB.`,
+        nameTooLong: 'The file name is too long.',
+      },
+    },
   },
 } as const;
 
