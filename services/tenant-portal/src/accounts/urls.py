@@ -20,6 +20,7 @@ auth_urlpatterns = [
         name="password-reset-confirm",
     ),
     path("me/", auth.MeView.as_view(), name="me"),
+    path("change-password/", auth.ChangePasswordView.as_view(), name="change-password"),
     path("mfa/totp/setup/", mfa.TOTPSetupView.as_view(), name="mfa-totp-setup"),
     path("mfa/totp/confirm/", mfa.TOTPConfirmView.as_view(), name="mfa-totp-confirm"),
     path("mfa/verify/", mfa.MFAVerifyView.as_view(), name="mfa-verify"),
@@ -33,6 +34,11 @@ admin_urlpatterns = [
         "tenants/<uuid:tenant_id>/suspend/",
         tenants.AdminTenantSuspendView.as_view(),
         name="tenant-suspend",
+    ),
+    path(
+        "tenants/<uuid:tenant_id>/unsuspend/",
+        tenants.AdminTenantUnsuspendView.as_view(),
+        name="tenant-unsuspend",
     ),
 ]
 

@@ -24,6 +24,7 @@ class AuthEvent(models.Model):
         MFA_SUCCESS = "mfa_success"
         MFA_FAILED = "mfa_failed"
         GOOGLE_LOGIN = "google_login"
+        PASSWORD_CHANGED = "password_changed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

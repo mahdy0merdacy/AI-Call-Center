@@ -23,6 +23,8 @@ const rv = messages.registerValidation;
 export const registerSchema = z
   .object({
     companyName: z.string().trim().min(1, rv.companyRequired).max(100, rv.companyTooLong),
+    firstName: z.string().trim().min(1, rv.firstNameRequired).max(150, rv.fieldTooLong),
+    lastName: z.string().trim().min(1, rv.lastNameRequired).max(150, rv.fieldTooLong),
     email: emailField,
     // Field-level so it shows even while other fields are still invalid.
     password: z.string().refine((value) => meetsPolicy(value), rv.passwordPolicy),

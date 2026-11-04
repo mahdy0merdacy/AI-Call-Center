@@ -3,6 +3,8 @@ import { toApiError } from '@/lib/errors';
 
 export interface RegisterPayload {
   companyName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
 }
@@ -11,8 +13,22 @@ export interface RegisterPayload {
  * The backend answers identically whether or not the email is already
  * registered (anti-enumeration), so success never means "account created".
  */
-export async function registerRequest({ companyName, email, password }: RegisterPayload): Promise<void> {
-  await api.post('/auth/register/', { company_name: companyName, email, password }, { skipAuthRefresh: true });
+/**
+ * The backend answers identically whether or not the email is already
+ * registered (anti-enumeration), so success never means "account created".
+ */
+export async function registerRequest({
+  companyName,
+  firstName,
+  lastName,
+  email,
+  password,
+}: RegisterPayload): Promise<void> {
+  await api.post(
+    '/auth/register/',
+    { company_name: companyName, first_name: firstName, last_name: lastName, email, password },
+    { skipAuthRefresh: true },
+  );
 }
 
 /** Always answers the same way, whether or not the address exists. */

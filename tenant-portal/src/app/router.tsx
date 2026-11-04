@@ -8,6 +8,7 @@ import {
   RequireCompleteAccount,
   RequireMfaSetupPending,
   RequireOnboardingPending,
+  RequireRole,
 } from './guards';
 import { paths } from './paths';
 import { RootLayout } from './RootLayout';
@@ -105,6 +106,16 @@ export const router = createBrowserRouter([
               {
                 path: paths.profile,
                 lazy: () => import('@/features/profile/pages/ProfilePage').then((m) => ({ Component: m.ProfilePage })),
+              },
+            ],
+          },
+          {
+            element: <RequireRole role="platform_admin" />,
+            children: [
+              {
+                path: paths.adminTenants,
+                lazy: () =>
+                  import('@/features/admin/pages/TenantsPage').then((m) => ({ Component: m.TenantsPage })),
               },
             ],
           },

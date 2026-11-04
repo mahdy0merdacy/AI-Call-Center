@@ -56,6 +56,26 @@ class OnboardingSerializer(serializers.Serializer):
     company_name = serializers.CharField(max_length=200, trim_whitespace=True)
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    new_password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+
+    def validate_current_password(self, value: str) -> str:
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Wrong password.")
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        candidate = User(
+            email=self.context["request"].user.email,
+            first_name=self.context["request"].user.first_name,
+            last_name=self.context["request"].user.last_name,
+        )
+        validate_password_policy(attrs["new_password"], candidate)
+        return attrs
+
+
 def validate_password_policy(password: str, user: User, field: str = "password") -> None:
     """Run AUTH_PASSWORD_VALIDATORS, reporting errors under `field`."""
     try:

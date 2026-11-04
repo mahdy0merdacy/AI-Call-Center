@@ -1,18 +1,21 @@
 """Email/password authentication endpoints."""
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema
-from rest_framework import status
+from django.db import transaction
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
-from accounts.jwt import clear_refresh_cookie
+from accounts.jwt import clear_refresh_cookie, issue_token_pair
 from accounts.models import User
 from accounts.permissions import RequiresCustomHeader
 from accounts.serializers import (
     AccessTokenResponseSerializer,
+    ChangePasswordSerializer,
     DetailSerializer,
     EmailSerializer,
     LoginSerializer,
@@ -31,7 +34,7 @@ from accounts.views.common import (
     login_failed_response,
     token_response,
 )
-from audit.services import EventType
+from audit.services import EventType, log_auth_event
 
 REGISTER_MESSAGE = "If the details are valid, a verification email has been sent."
 RESEND_MESSAGE = "If the account exists and is not verified, a new email has been sent."
@@ -204,4 +207,44 @@ class MeView(APIView):
     def get(self, request: Request) -> Response:
         """The authenticated user."""
         return Response(MeSerializer(request.user).data)
+
+    @extend_schema(request=inline_serializer("MeUpdate", {"full_name": serializers.CharField()}), responses={200: MeSerializer}, tags=["auth"])
+    def patch(self, request: Request) -> Response:
+        """Update the user's display name (`full_name` is split into names)."""
+        full_name = (request.data.get("full_name") or "").strip() if isinstance(request.data, dict) else ""
+        if not full_name or len(full_name) > 300:
+            return Response({"full_name": ["Enter your name."]}, status=status.HTTP_400_BAD_REQUEST)
+        parts = full_name.split(None, 1)
+        user: User = request.user
+        user.first_name = parts[0][:150]
+        user.last_name = (parts[1] if len(parts) > 1 else "")[:150]
+        user.save(update_fields=["first_name", "last_name", "updated_at"])
+        return Response(MeSerializer(user).data)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=ChangePasswordSerializer,
+        responses={200: AccessTokenResponseSerializer, 400: DetailSerializer},
+        tags=["auth"],
+    )
+    def post(self, request: Request) -> Response:
+        """Change the password; signs every session out except this browser.
+
+        Field errors come back under `current_password` / `new_password`.
+        All refresh tokens are revoked, then a fresh pair is issued so this
+        browser keeps its session.
+        """
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user: User = request.user
+        with transaction.atomic():
+            user.set_password(serializer.validated_data["new_password"])
+            user.save(update_fields=["password", "updated_at"])
+            for token in OutstandingToken.objects.filter(user=user):
+                BlacklistedToken.objects.get_or_create(token=token)
+        log_auth_event(EventType.PASSWORD_CHANGED, request=request, user=user)
+        return token_response(issue_token_pair(user))
 

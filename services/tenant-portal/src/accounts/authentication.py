@@ -25,6 +25,9 @@ class PortalJWTAuthentication(JWTAuthentication):
             user = User.objects.select_related("tenant").get(pk=user_id)
         except (User.DoesNotExist, ValidationError) as exc:
             raise AuthenticationFailed("User not found", code="user_not_found") from exc
-        if not user.can_authenticate():
+        if not user.is_active:
             raise AuthenticationFailed("User is inactive", code="user_inactive")
+        if user.tenant_id is not None and not user.tenant.is_active:
+            # The frontend routes this code to its /suspended screen.
+            raise AuthenticationFailed("Tenant suspended", code="tenant_suspended")
         return user

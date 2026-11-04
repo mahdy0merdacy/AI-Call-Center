@@ -319,7 +319,7 @@ CONTENT_SECURITY_POLICY = {
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = True  # needed for the refresh cookie
 CORS_ALLOW_HEADERS = (*default_headers, "x-correlation-id")
-CORS_EXPOSE_HEADERS = ["X-Correlation-ID"]
+CORS_EXPOSE_HEADERS = ["X-Correlation-ID", "Retry-After"]
 # allauth's browser flow (form POST to start Google login) needs CSRF from the
 # frontend origin; allauth also uses this list to validate callback URLs.
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS

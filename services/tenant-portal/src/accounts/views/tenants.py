@@ -42,6 +42,23 @@ class AdminTenantSuspendView(APIView):
         return Response(TenantSerializer(tenant).data)
 
 
+class AdminTenantUnsuspendView(APIView):
+    permission_classes = [IsPlatformAdmin]
+
+    @extend_schema(request=None, responses={200: TenantSerializer}, tags=["platform-admin"])
+    def post(self, request: Request, tenant_id: str) -> Response:
+        """Reactivate a suspended tenant: its users regain access immediately."""
+        tenant = get_object_or_404(Tenant, pk=tenant_id)
+        if not tenant.is_active:
+            tenant.is_active = True
+            tenant.save(update_fields=["is_active", "updated_at"])
+            logger.info(
+                "tenant unsuspended",
+                extra={"tenant_id": str(tenant.pk), "by_user_id": str(request.user.pk)},
+            )
+        return Response(TenantSerializer(tenant).data)
+
+
 class TenantMeView(APIView):
     permission_classes = [HasTenant]
 

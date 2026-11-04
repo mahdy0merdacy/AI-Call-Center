@@ -97,6 +97,14 @@ export function classifyMfaError(error: unknown): MfaFailure {
   if (apiError.hasCode('mfa_attempts_exceeded', 'too_many_attempts', 'challenge_locked')) {
     return { kind: 'exhausted' };
   }
+  // Backend sends `mfa_code_invalid` (401) for a wrong code. Check it BEFORE
+  // the status-401 fallback below, which means "expired challenge".
+  if (
+    apiError.kind === 'validation' ||
+    apiError.hasCode('mfa_code_invalid', 'invalid_code', 'invalid_otp')
+  ) {
+    return { kind: 'invalid', attemptsRemaining: attemptsFrom(apiError) };
+  }
   if (
     apiError.hasCode('mfa_challenge_expired', 'mfa_token_expired', 'mfa_token_invalid') ||
     apiError.status === 401
@@ -104,8 +112,5 @@ export function classifyMfaError(error: unknown): MfaFailure {
     return { kind: 'expired' };
   }
   if (apiError.hasCode('code_already_used', 'otp_reused', 'replay')) return { kind: 'replay' };
-  if (apiError.kind === 'validation' || apiError.hasCode('invalid_code', 'invalid_otp')) {
-    return { kind: 'invalid', attemptsRemaining: attemptsFrom(apiError) };
-  }
   return { kind: 'other', message: apiError.message };
 }

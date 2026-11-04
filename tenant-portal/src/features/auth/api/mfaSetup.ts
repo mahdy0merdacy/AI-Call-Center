@@ -6,7 +6,9 @@ const setupResponseSchema = z
   .object({
     otpauth_uri: z.string().startsWith('otpauth://').optional(),
     otpauth_url: z.string().startsWith('otpauth://').optional(),
-    qr_code: z.string().min(1),
+    // Backend: TOTPSetupResponseSerializer -> `qr_code_png_base64`.
+    qr_code_png_base64: z.string().min(1).optional(),
+    qr_code: z.string().min(1).optional(),
     secret: z.string().optional(),
   })
   .passthrough();
@@ -32,7 +34,8 @@ export async function startTotpSetup(): Promise<TotpSetup> {
   const { data } = await api.post<unknown>('/auth/mfa/totp/setup/');
   const parsed = setupResponseSchema.parse(data);
   const otpauthUri = parsed.otpauth_uri ?? parsed.otpauth_url ?? '';
-  const qrDataUrl = parsed.qr_code.startsWith('data:') ? parsed.qr_code : `data:image/png;base64,${parsed.qr_code}`;
+  const rawQr = parsed.qr_code ?? parsed.qr_code_png_base64 ?? '';
+  const qrDataUrl = rawQr ? (rawQr.startsWith('data:') ? rawQr : `data:image/png;base64,${rawQr}`) : '';
   return { otpauthUri, qrDataUrl, secret: parsed.secret ?? secretFromUri(otpauthUri) };
 }
 

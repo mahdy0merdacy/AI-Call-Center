@@ -34,7 +34,7 @@ type FormProblem =
   | { kind: 'throttled'; until: number | null; totalSeconds: number }
   | { kind: 'message'; text: string };
 
-const SERVER_FIELDS = ['companyName', 'email', 'password'] as const;
+const SERVER_FIELDS = ['companyName', 'firstName', 'lastName', 'email', 'password'] as const;
 
 export function RegisterPage() {
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
@@ -52,7 +52,15 @@ export function RegisterPage() {
     formState: { errors },
   } = useForm<RegisterInput, unknown, RegisterValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { companyName: '', email: '', password: '', confirmPassword: '', acceptTerms: false },
+    defaultValues: {
+      companyName: '',
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      acceptTerms: false,
+    },
     mode: 'onTouched',
   });
 
@@ -65,7 +73,13 @@ export function RegisterPage() {
     async (values) => {
       setProblem(null);
       try {
-        await signUp.mutateAsync({ companyName: values.companyName, email: values.email, password: values.password });
+        await signUp.mutateAsync({
+          companyName: values.companyName,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          email: values.email,
+          password: values.password,
+        });
         // Same screen whether or not the address was already registered (anti-enumeration).
         startCooldown(verifyCooldownKey(values.email));
         setSubmittedEmail(values.email);
@@ -85,7 +99,7 @@ export function RegisterPage() {
         if (apiError.kind === 'validation') {
           const leftover = applyServerErrors(apiError, setError, {
             fields: SERVER_FIELDS,
-            aliases: { company_name: 'companyName' },
+            aliases: { company_name: 'companyName', first_name: 'firstName', last_name: 'lastName' },
           });
           if (leftover) setProblem({ kind: 'message', text: leftover });
           return;
@@ -177,6 +191,15 @@ export function RegisterPage() {
                   autoFocus
                 />
               )}
+            </Field>
+          </StaggerItem>
+
+          <StaggerItem className="grid grid-cols-2 gap-3">
+            <Field id="register-first-name" label={t.firstName} error={errors.firstName?.message}>
+              {(field) => <Input {...field} {...register('firstName')} autoComplete="given-name" />}
+            </Field>
+            <Field id="register-last-name" label={t.lastName} error={errors.lastName?.message}>
+              {(field) => <Input {...field} {...register('lastName')} autoComplete="family-name" />}
             </Field>
           </StaggerItem>
 
