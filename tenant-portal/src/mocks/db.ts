@@ -5,6 +5,7 @@
  */
 import type { AuthProvider, Role } from '@/features/auth/types';
 import { resetDocumentsStore } from './documentsStore';
+import { resetSessionLinksStore } from './sessionLinksStore';
 
 export interface MockUser {
   id: string;
@@ -229,6 +230,7 @@ export function resetMockDb(): void {
   Object.assign(db, seed());
   persist();
   resetDocumentsStore();
+  resetSessionLinksStore();
 }
 
 export function findUserById(id: string): MockUser | undefined {

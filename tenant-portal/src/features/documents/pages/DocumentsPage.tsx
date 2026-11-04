@@ -1,6 +1,7 @@
 /**
  * Knowledge documents a tenant uploads for its voice agent (upload card +
- * table), served by the documents service. Session links will join this page.
+ * table) and the session links it shares with customers, served by the
+ * documents service.
  */
 import { AppHeader } from '@/components/layout/AppHeader';
 import { Stagger, StaggerItem } from '@/components/motion';
@@ -12,6 +13,7 @@ import { messages } from '@/i18n';
 import { userMessage } from '@/lib/errors';
 import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
 import { DocumentsTable } from '../components/DocumentsTable';
+import { SessionLinksCard } from '../components/SessionLinksCard';
 import { UploadCard } from '../components/UploadCard';
 import { useDocuments } from '../hooks/useDocuments';
 
@@ -80,6 +82,10 @@ export function DocumentsPage() {
                 )}
               </CardContent>
             </Card>
+          </StaggerItem>
+
+          <StaggerItem>
+            <SessionLinksCard />
           </StaggerItem>
         </Stagger>
       </main>

@@ -7,6 +7,7 @@ import { passwordResetHandlers } from './passwordReset';
 import { profileHandlers } from './profile';
 import { registrationHandlers } from './registration';
 import { sessionHandlers } from './session';
+import { sessionLinksHandlers } from './sessionLinks';
 
 export const handlers = [
   // First: the devtools "network down" switch short-circuits everything.
@@ -19,4 +20,5 @@ export const handlers = [
   ...mfaSetupHandlers,
   ...profileHandlers,
   ...documentsHandlers,
+  ...sessionLinksHandlers,
 ];

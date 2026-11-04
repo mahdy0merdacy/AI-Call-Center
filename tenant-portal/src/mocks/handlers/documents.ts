@@ -11,7 +11,7 @@ import { env } from '@/lib/env';
 import { addTenantDocument, listTenantDocuments } from '../documentsStore';
 import { authenticate, drfError, latency } from '../utils';
 
-const documentsUrl = (path: string): string => `${env.documentsRoot}${path}`;
+export const documentsUrl = (path: string): string => `${env.documentsRoot}${path}`;
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -34,7 +34,7 @@ function toInt(value: string | null, fallback: number): number {
 type TenantResult = { tenantId: string } | { response: Response };
 
 /** Same gate as the real service: valid token, `tenant_admin` role, a tenant in the token. */
-function requireTenant(request: Request): TenantResult {
+export function requireTenant(request: Request): TenantResult {
   const result = authenticate(request);
   if ('response' in result) return result;
   const { user } = result;
