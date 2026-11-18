@@ -21,14 +21,18 @@ class CallEvent(_message.Message):
     def __init__(self, start: _Optional[_Union[StartCall, _Mapping]] = ..., transcript: _Optional[_Union[Transcript, _Mapping]] = ..., speech_started: _Optional[_Union[SpeechStarted, _Mapping]] = ..., speech_ended: _Optional[_Union[SpeechEnded, _Mapping]] = ..., end: _Optional[_Union[EndCall, _Mapping]] = ...) -> None: ...
 
 class StartCall(_message.Message):
-    __slots__ = ("tenant_slug", "call_id", "caller_ref")
+    __slots__ = ("tenant_slug", "call_id", "caller_ref", "synthetic", "channel")
     TENANT_SLUG_FIELD_NUMBER: _ClassVar[int]
     CALL_ID_FIELD_NUMBER: _ClassVar[int]
     CALLER_REF_FIELD_NUMBER: _ClassVar[int]
+    SYNTHETIC_FIELD_NUMBER: _ClassVar[int]
+    CHANNEL_FIELD_NUMBER: _ClassVar[int]
     tenant_slug: str
     call_id: str
     caller_ref: str
-    def __init__(self, tenant_slug: _Optional[str] = ..., call_id: _Optional[str] = ..., caller_ref: _Optional[str] = ...) -> None: ...
+    synthetic: bool
+    channel: str
+    def __init__(self, tenant_slug: _Optional[str] = ..., call_id: _Optional[str] = ..., caller_ref: _Optional[str] = ..., synthetic: _Optional[bool] = ..., channel: _Optional[str] = ...) -> None: ...
 
 class Transcript(_message.Message):
     __slots__ = ("text", "is_final", "at_sample")

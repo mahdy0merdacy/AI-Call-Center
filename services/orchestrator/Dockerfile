@@ -29,6 +29,8 @@ COPY --from=deps /opt/venv /opt/venv
 COPY tenants /srv/aicc/tenants
 COPY services/orchestrator/gen /srv/aicc/services/orchestrator/gen
 COPY services/orchestrator/app /srv/aicc/services/orchestrator/app
+# Shared call-event publisher; server.py adds /srv/aicc/libs to the import path.
+COPY libs/aicc_events /srv/aicc/libs/aicc_events
 
 WORKDIR /srv/aicc/services/orchestrator
 USER 10001
@@ -36,5 +38,6 @@ EXPOSE 50052
 
 # Exec form: python is PID 1 and receives SIGTERM, which server.py drains on.
 # MCP endpoints and the model are flags; override them per environment.
+# Call events: set KAFKA_BOOTSTRAP and SCHEMA_REGISTRY_URL to publish them.
 ENTRYPOINT ["python", "-m", "app.server"]
 CMD ["--port", "50052"]

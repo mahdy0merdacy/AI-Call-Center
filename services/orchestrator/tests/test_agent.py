@@ -23,6 +23,11 @@ def _run_turn(agent: Agent, text: str):
     return events, said
 
 
+def _one(events: list[dict], type_: str) -> dict:
+    (match,) = [e for e in events if e["type"] == type_]
+    return match
+
+
 # ── clause splitting ─────────────────────────────────────────────────────────
 
 
@@ -66,7 +71,8 @@ def test_scripted_turn_speaks_config_text_and_sets_endpointing(tenant):
     assert said == ["Can I take your shipment ID?"]
     types = [e["type"] for e in events]
     assert types[0] == "flow"
-    assert {"type": "set_silence_ms", "value": 1400} in events
+    endpointing = _one(events, "set_silence_ms")
+    assert endpointing["value"] == 1400 and endpointing["slot"] == "shipment_id"
     assert types[-1] == "turn_complete"
 
 
@@ -76,5 +82,41 @@ def test_escalation_ends_the_conversation(tenant):
     for _ in range(3):
         events, said = _run_turn(agent, "no idea")
     assert said == ["Transferring you now."]
-    assert {"type": "escalated"} in events
+    assert _one(events, "escalated")["reason"] == "max_attempts"
     assert agent.ended is True
+
+
+# ── facts reported for the event log ─────────────────────────────────────────
+
+
+def test_turns_are_numbered_and_routing_reports_its_score(tenant):
+    agent = _agent(tenant)
+    events, _ = _run_turn(agent, "where is my parcel")
+    flow = _one(events, "flow")
+    assert flow["turn"] == 1 and flow["route_score"] == 1.0
+    assert _one(events, "turn_complete")["clauses"] == 1
+
+    # Inside an active flow there is no routing, so no score.
+    events, _ = _run_turn(agent, "no idea")
+    assert _one(events, "flow")["turn"] == 2
+    assert _one(events, "flow")["route_score"] is None
+
+
+def test_slot_answers_are_reported_filled_or_rejected(tenant, monkeypatch):
+    agent = _agent(tenant)
+    _run_turn(agent, "where is my parcel")
+
+    events, _ = _run_turn(agent, "no idea")
+    rejected = _one(events, "slot")
+    assert rejected["ok"] is False and rejected["attempt"] == 1
+    assert rejected["utterance"] == "no idea" and rejected["max_attempts"] == 3
+
+    # The second answer completes the slot; stop before the tool and LLM run.
+    async def no_llm(*args, **kwargs):
+        return ""
+
+    monkeypatch.setattr(agent, "_llm_turn", no_llm)
+    events, _ = _run_turn(agent, "it's AC4471X209")
+    filled = _one(events, "slot")
+    assert filled["ok"] is True and filled["attempt"] == 2
+    assert filled["value"] == "AC4471X209" and filled["slot"] == "shipment_id"

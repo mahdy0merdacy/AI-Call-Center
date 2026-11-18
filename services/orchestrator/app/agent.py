@@ -23,7 +23,7 @@ import time
 
 import aiohttp
 
-from .flow import CallFlowState, Tenant, TurnAction, route
+from .flow import CallFlowState, Tenant, TurnAction, route_scored
 from .tools import ToolRegistry
 
 log = logging.getLogger("agent")
@@ -48,6 +48,9 @@ class Agent:
         self.state = CallFlowState(tenant)
         self.cancelled = False
         self.ended = False          # escalated: stop talking
+        self.turn_index = 0         # 0 = greeting; each caller utterance adds one
+        self.route_score: float | None = None   # set only when routing ran this turn
+        self.llm_stats: dict = {}   # filled by _stream_llm, read after each LLM call
 
     # -- prompts ----------------------------------------------------------
 
@@ -76,6 +79,8 @@ class Agent:
                    "max_tokens": 180, "stream": True}
         headers = {"Authorization": f"Bearer {self.api_key}",
                    "Content-Type": "application/json"}
+        stats = self.llm_stats = {"ttft_ms": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        t0 = time.perf_counter()
         async with session.post(GROQ_URL, json=payload, headers=headers,
                                 timeout=aiohttp.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
@@ -88,10 +93,21 @@ class Agent:
                 if data == "[DONE]":
                     return
                 try:
-                    delta = json.loads(data)["choices"][0].get("delta", {})
-                except (json.JSONDecodeError, KeyError, IndexError):
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
                     continue
-                if tok := delta.get("content"):
+                # Token usage arrives on the final chunk, when the server sends it:
+                # `usage` (OpenAI-compatible servers) or `x_groq.usage` (Groq).
+                usage = chunk.get("usage") or (chunk.get("x_groq") or {}).get("usage")
+                if usage:
+                    stats["prompt_tokens"] = usage.get("prompt_tokens", 0)
+                    stats["completion_tokens"] = usage.get("completion_tokens", 0)
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                if tok := (choices[0].get("delta") or {}).get("content"):
+                    if not stats["ttft_ms"]:
+                        stats["ttft_ms"] = int((time.perf_counter() - t0) * 1000)
                     yield tok
 
     # -- speaking ---------------------------------------------------------
@@ -113,24 +129,34 @@ class Agent:
         text = (self.tenant.voice or {}).get("greeting")
         if not text:
             return
+        said = _Counted(on_say)
         on_event({"type": "token", "text": text})
-        self._emit_clauses(text, on_say)
-        on_event({"type": "turn_complete", "total_s": 0.0, "text": text})
+        self._emit_clauses(text, said)
+        on_event({"type": "turn_complete", "turn": 0, "total_s": 0.0, "total_ms": 0,
+                  "clauses": said.count, "text": text})
 
     # -- a turn -----------------------------------------------------------
 
     async def respond(self, user_text: str, on_event, on_say):
         self.cancelled = False
+        self.turn_index += 1
+        turn = self.turn_index
         t0 = time.perf_counter()
+        on_say = _Counted(on_say)
 
         action = self._decide(user_text)
-        on_event({"type": "flow", "kind": action.kind,
-                  "intent": action.flow.intent if action.flow else None,
-                  "slots": dict(self.state.filled)})
+        intent = action.flow.intent if action.flow else None
+        on_event({"type": "flow", "turn": turn, "kind": action.kind, "intent": intent,
+                  "slots": dict(self.state.filled), "route_score": self.route_score})
+        if so := action.slot_outcome:
+            on_event({"type": "slot", "turn": turn, "intent": intent, "slot": so.slot,
+                      "ok": so.ok, "attempt": so.attempt, "max_attempts": so.max_attempts,
+                      "value": so.value, "utterance": so.utterance})
         if action.next_silence_ms:
             # Slot-driven endpointing: a code read aloud needs a longer window, or
             # STT cuts the caller off mid-sequence.
-            on_event({"type": "set_silence_ms", "value": action.next_silence_ms})
+            on_event({"type": "set_silence_ms", "value": action.next_silence_ms,
+                      "turn": turn, "slot": action.next_slot})
 
         async with aiohttp.ClientSession() as session:
             try:
@@ -143,7 +169,8 @@ class Agent:
                 elif action.kind == "escalate":
                     on_event({"type": "token", "text": action.text})
                     self._emit_clauses(action.text, on_say)
-                    on_event({"type": "escalated"})
+                    on_event({"type": "escalated", "turn": turn, "intent": intent,
+                              "reason": "max_attempts"})
                     spoken = action.text
                     self.state.reset_flow()
                     # A live test showed the agent carrying on for 17 turns after
@@ -156,25 +183,25 @@ class Agent:
 
             except Exception as exc:
                 log.exception("turn failed")
-                on_event({"type": "error", "detail": str(exc)[:200]})
+                on_event({"type": "error", "turn": turn, "component": "turn",
+                          "code": type(exc).__name__, "detail": str(exc)[:200]})
                 return
 
         if spoken:
             self.history.append({"role": "user", "content": user_text})
             self.history.append({"role": "assistant", "content": spoken})
             self.history = self.history[-20:]
-        on_event({"type": "turn_complete", "total_s": round(time.perf_counter() - t0, 2),
-                  "text": spoken})
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        on_event({"type": "turn_complete", "turn": turn, "total_s": round(total_ms / 1000, 2),
+                  "total_ms": total_ms, "clauses": on_say.count, "text": spoken})
 
     def _decide(self, user_text: str) -> TurnAction:
         """Pure flow logic — no I/O, no model."""
+        self.route_score = None
         if self.state.active:
-            action = self.state.advance(user_text)
-            if action.kind != "ready_for_tool":
-                return action
-            return TurnAction(kind="ready_for_tool", flow=self.state.active)
+            return self.state.advance(user_text)
 
-        flow = route(self.tenant, user_text)
+        flow, self.route_score = route_scored(self.tenant, user_text)
         if flow is None:
             return TurnAction(kind="open")
         if flow.requires_flow and flow.requires_flow not in self.state.completed:
@@ -187,10 +214,12 @@ class Agent:
         extra = ""
 
         if action.kind == "ready_for_tool" and action.flow and action.flow.tool:
-            result = await self.tools.call(action.flow.tool, dict(self.state.filled))
+            call = await self.tools.invoke(action.flow.tool, dict(self.state.filled))
+            result = call.result
             outcome = result.get("outcome", "error")
-            on_event({"type": "tool_result", "tool": action.flow.tool,
-                      "outcome": outcome, "data": result})
+            on_event({"type": "tool_result", "turn": self.turn_index, "tool": action.flow.tool,
+                      "outcome": outcome, "data": result, "latency_ms": call.latency_ms,
+                      "timed_out": call.timed_out})
 
             spec = action.flow.outcomes.get(outcome)
             guidance = spec.get("guidance") if isinstance(spec, dict) else (spec or "")
@@ -231,17 +260,25 @@ class Agent:
                     + self.history + [{"role": "user", "content": user_text}])
 
         spoken, pending = "", ""
-        async for tok in self._stream_llm(session, messages):
-            if self.cancelled:
-                break
-            spoken += tok
-            pending += tok
-            on_event({"type": "token", "text": tok})
-            for clause in self._drain(pending):
-                pending = pending[len(clause):]
+        t0 = time.perf_counter()
+        try:
+            async for tok in self._stream_llm(session, messages):
                 if self.cancelled:
                     break
-                on_say(clause.strip())
+                spoken += tok
+                pending += tok
+                on_event({"type": "token", "text": tok})
+                for clause in self._drain(pending):
+                    pending = pending[len(clause):]
+                    if self.cancelled:
+                        break
+                    on_say(clause.strip())
+        finally:
+            # Reported even when the stream fails or is cut short by a barge-in.
+            on_event({"type": "llm", "turn": self.turn_index, "model": self.model,
+                      "purpose": "grounded" if action.kind == "ready_for_tool" else "open",
+                      "total_ms": int((time.perf_counter() - t0) * 1000),
+                      "cancelled": self.cancelled, **self.llm_stats})
 
         tail = pending.strip()
         if tail and not self.cancelled:
@@ -263,3 +300,15 @@ class Agent:
                 buf = buf[cut:]
                 continue
             return
+
+
+class _Counted:
+    """Wraps an on_say callback and counts the clauses it was given."""
+
+    def __init__(self, on_say):
+        self._on_say = on_say
+        self.count = 0
+
+    def __call__(self, text: str) -> None:
+        self.count += 1
+        self._on_say(text)
