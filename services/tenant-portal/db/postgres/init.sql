@@ -1667,13 +1667,14 @@ INSERT INTO public.django_migrations VALUES (58, 'token_blacklist', '0010_fix_mi
 INSERT INTO public.django_migrations VALUES (59, 'token_blacklist', '0011_linearizes_history', '2026-10-25 19:42:45.032909+00');
 INSERT INTO public.django_migrations VALUES (60, 'token_blacklist', '0012_alter_outstandingtoken_user', '2026-10-25 19:42:45.052295+00');
 INSERT INTO public.django_migrations VALUES (61, 'token_blacklist', '0013_alter_blacklistedtoken_options_and_more', '2026-10-25 19:42:45.072087+00');
+INSERT INTO public.django_migrations VALUES (62, 'audit', '0002_alter_authevent_event_type', '2026-11-19 21:05:00.000000+00');
 
 
 --
 -- Name: django_migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.django_migrations_id_seq', 61, true);
+SELECT pg_catalog.setval('public.django_migrations_id_seq', 62, true);
 
 
 --
