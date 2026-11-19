@@ -92,6 +92,7 @@ tenant-portal:
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
     - changes:
         - services/tenant-portal/**/*
+        - ci/templates/**/*
         - .gitlab-ci.yml
 
 tenant-portal-web:
@@ -114,4 +115,5 @@ documents:
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
     - changes:
         - services/documents/**/*
+        - ci/templates/**/*
         - .gitlab-ci.yml
