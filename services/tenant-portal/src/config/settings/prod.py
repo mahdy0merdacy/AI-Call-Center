@@ -8,7 +8,9 @@ from .base import ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS, env
 DEBUG = False
 
 if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
-    raise ImproperlyConfigured("ALLOWED_HOSTS must list explicit hostnames in production.")
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS must list explicit hostnames in production."
+    )
 if any(origin.startswith("http://") for origin in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must use https:// in production.")
 

@@ -28,7 +28,9 @@ class AdminTenantListView(generics.ListAPIView):
 class AdminTenantSuspendView(APIView):
     permission_classes = [IsPlatformAdmin]
 
-    @extend_schema(request=None, responses={200: TenantSerializer}, tags=["platform-admin"])
+    @extend_schema(
+        request=None, responses={200: TenantSerializer}, tags=["platform-admin"]
+    )
     def post(self, request: Request, tenant_id: str) -> Response:
         """Suspend a tenant: its users can no longer log in, refresh or call the API."""
         tenant = get_object_or_404(Tenant, pk=tenant_id)
@@ -45,7 +47,9 @@ class AdminTenantSuspendView(APIView):
 class AdminTenantUnsuspendView(APIView):
     permission_classes = [IsPlatformAdmin]
 
-    @extend_schema(request=None, responses={200: TenantSerializer}, tags=["platform-admin"])
+    @extend_schema(
+        request=None, responses={200: TenantSerializer}, tags=["platform-admin"]
+    )
     def post(self, request: Request, tenant_id: str) -> Response:
         """Reactivate a suspended tenant: its users regain access immediately."""
         tenant = get_object_or_404(Tenant, pk=tenant_id)

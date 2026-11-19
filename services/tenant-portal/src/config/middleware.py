@@ -1,6 +1,7 @@
 """Request-level middleware: correlation ids and structured access logs."""
+
 # Request ID and security middleware
-#that runs on every request
+# that runs on every request
 import logging
 import re
 import time

@@ -11,7 +11,11 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.exceptions import ValidationError
 from django.utils.crypto import constant_time_compare
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import base36_to_int, urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import (
+    base36_to_int,
+    urlsafe_base64_decode,
+    urlsafe_base64_encode,
+)
 
 from accounts.models import User
 
@@ -38,7 +42,9 @@ class ExpiringTokenGenerator(PasswordResetTokenGenerator):
         except ValueError:
             return False
         for secret in [self.secret, *self.secret_fallbacks]:
-            if constant_time_compare(self._make_token_with_timestamp(user, ts, secret), token):
+            if constant_time_compare(
+                self._make_token_with_timestamp(user, ts, secret), token
+            ):
                 break
         else:
             return False

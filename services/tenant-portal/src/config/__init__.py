@@ -1,2 +1,2 @@
-#configuration project
+# configuration project
 # django-admin startproject config.

@@ -71,13 +71,17 @@ def authenticate_credentials(request: HttpRequest, email: str, password: str) ->
         raise InvalidCredentials
 
     if user.failed_login_attempts or user.locked_until:
-        User.objects.filter(pk=user.pk).update(failed_login_attempts=0, locked_until=None)
+        User.objects.filter(pk=user.pk).update(
+            failed_login_attempts=0, locked_until=None
+        )
         user.failed_login_attempts, user.locked_until = 0, None
     return user
 
 
 def _notify_axes_failure(request: HttpRequest, email: str) -> None:
-    user_login_failed.send(sender=__name__, credentials={"username": email}, request=request)
+    user_login_failed.send(
+        sender=__name__, credentials={"username": email}, request=request
+    )
 
 
 def _register_failed_attempt(user: User, request: HttpRequest) -> None:
@@ -85,11 +89,15 @@ def _register_failed_attempt(user: User, request: HttpRequest) -> None:
     with transaction.atomic():
         locked_user = User.objects.select_for_update().get(pk=user.pk)
         locked_user.failed_login_attempts += 1
-        now_locked = locked_user.failed_login_attempts >= settings.LOGIN_LOCKOUT_THRESHOLD
+        now_locked = (
+            locked_user.failed_login_attempts >= settings.LOGIN_LOCKOUT_THRESHOLD
+        )
         if now_locked:
             locked_user.locked_until = timezone.now() + settings.LOGIN_LOCKOUT_DURATION
             locked_user.failed_login_attempts = 0
-        locked_user.save(update_fields=["failed_login_attempts", "locked_until", "updated_at"])
+        locked_user.save(
+            update_fields=["failed_login_attempts", "locked_until", "updated_at"]
+        )
     log_auth_event(EventType.LOGIN_FAILED, request=request, user=user)
     if now_locked:
         log_auth_event(EventType.ACCOUNT_LOCKED, request=request, user=user)

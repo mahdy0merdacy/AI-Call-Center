@@ -1,5 +1,6 @@
 """Input validation and output shapes for the accounts API."""
-#validates input 
+
+# validates input
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
@@ -12,7 +13,9 @@ from accounts.models import Tenant, User, normalize_email_address
 class RegisterSerializer(serializers.Serializer):
     company_name = serializers.CharField(max_length=200, trim_whitespace=True)
     email = serializers.EmailField(max_length=254)
-    password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    password = serializers.CharField(
+        write_only=True, max_length=128, trim_whitespace=False
+    )
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
 
@@ -20,7 +23,9 @@ class RegisterSerializer(serializers.Serializer):
         attrs["email"] = normalize_email_address(attrs["email"])
         # Unsaved user so UserAttributeSimilarityValidator can compare fields.
         candidate = User(
-            email=attrs["email"], first_name=attrs["first_name"], last_name=attrs["last_name"]
+            email=attrs["email"],
+            first_name=attrs["first_name"],
+            last_name=attrs["last_name"],
         )
         validate_password_policy(attrs["password"], candidate)
         return attrs
@@ -28,7 +33,9 @@ class RegisterSerializer(serializers.Serializer):
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
-    password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    password = serializers.CharField(
+        write_only=True, max_length=128, trim_whitespace=False
+    )
 
 
 class EmailSerializer(serializers.Serializer):
@@ -41,7 +48,9 @@ class UidTokenSerializer(serializers.Serializer):
 
 
 class PasswordResetConfirmSerializer(UidTokenSerializer):
-    new_password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    new_password = serializers.CharField(
+        write_only=True, max_length=128, trim_whitespace=False
+    )
 
 
 class MFACodeSerializer(serializers.Serializer):
@@ -57,8 +66,12 @@ class OnboardingSerializer(serializers.Serializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
-    new_password = serializers.CharField(write_only=True, max_length=128, trim_whitespace=False)
+    current_password = serializers.CharField(
+        write_only=True, max_length=128, trim_whitespace=False
+    )
+    new_password = serializers.CharField(
+        write_only=True, max_length=128, trim_whitespace=False
+    )
 
     def validate_current_password(self, value: str) -> str:
         user = self.context["request"].user
@@ -76,7 +89,9 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 
 
-def validate_password_policy(password: str, user: User, field: str = "password") -> None:
+def validate_password_policy(
+    password: str, user: User, field: str = "password"
+) -> None:
     """Run AUTH_PASSWORD_VALIDATORS, reporting errors under `field`."""
     try:
         validate_password(password, user=user)
@@ -103,7 +118,9 @@ class TenantSummarySerializer(serializers.ModelSerializer):
 
 class MeSerializer(serializers.ModelSerializer):
     tenant = TenantSummarySerializer(read_only=True, allow_null=True)
-    email_verified = serializers.BooleanField(source="is_email_verified", read_only=True)
+    email_verified = serializers.BooleanField(
+        source="is_email_verified", read_only=True
+    )
     mfa_enabled = serializers.BooleanField(read_only=True)
 
     class Meta:

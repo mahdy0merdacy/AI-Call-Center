@@ -4,34 +4,31 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0001_initial'),
-        ('otp_static', '0003_add_timestamps'),
-        ('otp_totp', '0003_add_timestamps'),
+        ("accounts", "0001_initial"),
+        ("otp_static", "0003_add_timestamps"),
+        ("otp_totp", "0003_add_timestamps"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BackupCodeDevice',
-            fields=[
-            ],
+            name="BackupCodeDevice",
+            fields=[],
             options={
-                'proxy': True,
-                'indexes': [],
-                'constraints': [],
+                "proxy": True,
+                "indexes": [],
+                "constraints": [],
             },
-            bases=('otp_static.staticdevice',),
+            bases=("otp_static.staticdevice",),
         ),
         migrations.CreateModel(
-            name='EncryptedTOTPDevice',
-            fields=[
-            ],
+            name="EncryptedTOTPDevice",
+            fields=[],
             options={
-                'proxy': True,
-                'indexes': [],
-                'constraints': [],
+                "proxy": True,
+                "indexes": [],
+                "constraints": [],
             },
-            bases=('otp_totp.totpdevice',),
+            bases=("otp_totp.totpdevice",),
         ),
     ]

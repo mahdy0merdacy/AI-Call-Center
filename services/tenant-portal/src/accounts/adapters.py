@@ -34,7 +34,9 @@ class AccountAdapter(DefaultAccountAdapter):
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
-    def is_open_for_signup(self, request: HttpRequest, sociallogin: SocialLogin) -> bool:
+    def is_open_for_signup(
+        self, request: HttpRequest, sociallogin: SocialLogin
+    ) -> bool:
         return True
 
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin) -> None:
@@ -43,21 +45,29 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if account.provider not in ALLOWED_PROVIDERS:
             raise ValidationError("Provider not allowed.", code="provider_not_allowed")
         if sociallogin.state.get("process") == AuthProcess.CONNECT:
-            raise ValidationError("Account linking is not supported.", code="connect_not_supported")
+            raise ValidationError(
+                "Account linking is not supported.", code="connect_not_supported"
+            )
         if account.extra_data.get("email_verified") is not True:
-            raise ValidationError("Google email is not verified.", code="email_not_verified")
+            raise ValidationError(
+                "Google email is not verified.", code="email_not_verified"
+            )
         if sociallogin.is_existing:
             return  # matched by Google `sub`
         email = normalize_email_address(account.extra_data.get("email") or "")
         if not email:
-            raise ValidationError("Google did not provide an email.", code="email_missing")
+            raise ValidationError(
+                "Google did not provide an email.", code="email_missing"
+            )
         if User.objects.filter(email=email).exists():
             raise ValidationError(
                 "An account with this email already exists; sign in with your password.",
                 code="email_already_registered",
             )
 
-    def populate_user(self, request: HttpRequest, sociallogin: SocialLogin, data: dict) -> User:
+    def populate_user(
+        self, request: HttpRequest, sociallogin: SocialLogin, data: dict
+    ) -> User:
         user = super().populate_user(request, sociallogin, data)
         user.email = normalize_email_address(user.email)
         user.role = User.Role.TENANT_ADMIN

@@ -8,7 +8,10 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from accounts.jwt import clear_refresh_cookie, issue_token_pair
 from accounts.models import User
@@ -46,7 +49,9 @@ class RegisterView(PublicAPIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "register"
 
-    @extend_schema(request=RegisterSerializer, responses={201: DetailSerializer}, tags=["auth"])
+    @extend_schema(
+        request=RegisterSerializer, responses={201: DetailSerializer}, tags=["auth"]
+    )
     def post(self, request: Request) -> Response:
         """Create a tenant and its first tenant_admin. No tokens are returned."""
         serializer = RegisterSerializer(data=request.data)
@@ -77,7 +82,9 @@ class ResendVerificationView(PublicAPIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "resend_verification"
 
-    @extend_schema(request=EmailSerializer, responses={200: DetailSerializer}, tags=["auth"])
+    @extend_schema(
+        request=EmailSerializer, responses={200: DetailSerializer}, tags=["auth"]
+    )
     def post(self, request: Request) -> Response:
         """Resend the verification email. Always returns the same response."""
         serializer = EmailSerializer(data=request.data)
@@ -121,7 +128,9 @@ class LoginView(PublicAPIView):
                 {"mfa_required": True, "mfa_token": mfa.create_mfa_challenge(user)}
             ).data
             return Response(data, headers={"Cache-Control": "no-store"})
-        pair = authentication.complete_login(django_request, user, EventType.LOGIN_SUCCESS)
+        pair = authentication.complete_login(
+            django_request, user, EventType.LOGIN_SUCCESS
+        )
         return token_response(pair)
 
 
@@ -143,7 +152,9 @@ class RefreshView(PublicAPIView):
                 get_refresh_cookie(request), request._request
             )
         except authentication.InvalidRefreshToken:
-            response = detail_response("Invalid refresh token.", status.HTTP_401_UNAUTHORIZED)
+            response = detail_response(
+                "Invalid refresh token.", status.HTTP_401_UNAUTHORIZED
+            )
             clear_refresh_cookie(response)
             return response
         return token_response(pair)
@@ -168,12 +179,16 @@ class PasswordResetRequestView(PublicAPIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "password_reset"
 
-    @extend_schema(request=EmailSerializer, responses={200: DetailSerializer}, tags=["auth"])
+    @extend_schema(
+        request=EmailSerializer, responses={200: DetailSerializer}, tags=["auth"]
+    )
     def post(self, request: Request) -> Response:
         """Send a password reset link (valid 1 h). Always the same response."""
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        passwords.request_password_reset(serializer.validated_data["email"], request._request)
+        passwords.request_password_reset(
+            serializer.validated_data["email"], request._request
+        )
         return detail_response(RESET_MESSAGE)
 
 
@@ -208,12 +223,22 @@ class MeView(APIView):
         """The authenticated user."""
         return Response(MeSerializer(request.user).data)
 
-    @extend_schema(request=inline_serializer("MeUpdate", {"full_name": serializers.CharField()}), responses={200: MeSerializer}, tags=["auth"])
+    @extend_schema(
+        request=inline_serializer("MeUpdate", {"full_name": serializers.CharField()}),
+        responses={200: MeSerializer},
+        tags=["auth"],
+    )
     def patch(self, request: Request) -> Response:
         """Update the user's display name (`full_name` is split into names)."""
-        full_name = (request.data.get("full_name") or "").strip() if isinstance(request.data, dict) else ""
+        full_name = (
+            (request.data.get("full_name") or "").strip()
+            if isinstance(request.data, dict)
+            else ""
+        )
         if not full_name or len(full_name) > 300:
-            return Response({"full_name": ["Enter your name."]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"full_name": ["Enter your name."]}, status=status.HTTP_400_BAD_REQUEST
+            )
         parts = full_name.split(None, 1)
         user: User = request.user
         user.first_name = parts[0][:150]
@@ -237,7 +262,9 @@ class ChangePasswordView(APIView):
         All refresh tokens are revoked, then a fresh pair is issued so this
         browser keeps its session.
         """
-        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         user: User = request.user
         with transaction.atomic():
@@ -247,4 +274,3 @@ class ChangePasswordView(APIView):
                 BlacklistedToken.objects.get_or_create(token=token)
         log_auth_event(EventType.PASSWORD_CHANGED, request=request, user=user)
         return token_response(issue_token_pair(user))
-

@@ -20,7 +20,10 @@ from django.conf import settings
 from django.http import HttpResponse
 from rest_framework_simplejwt.backends import TokenBackend
 from rest_framework_simplejwt.settings import api_settings
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.utils import datetime_from_epoch
 
@@ -132,7 +135,9 @@ def issue_token_pair(user: User) -> TokenPair:
 
 def revoke_all_refresh_tokens(user: User) -> int:
     """Blacklist every outstanding refresh token of `user`. Returns the count."""
-    outstanding = OutstandingToken.objects.filter(user=user, blacklistedtoken__isnull=True)
+    outstanding = OutstandingToken.objects.filter(
+        user=user, blacklistedtoken__isnull=True
+    )
     blacklisted = BlacklistedToken.objects.bulk_create(
         [BlacklistedToken(token=token) for token in outstanding], ignore_conflicts=True
     )

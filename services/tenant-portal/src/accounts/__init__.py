@@ -1,2 +1,2 @@
-#users and authentification
-#python manage.py startapp accounts.
+# users and authentification
+# python manage.py startapp accounts.

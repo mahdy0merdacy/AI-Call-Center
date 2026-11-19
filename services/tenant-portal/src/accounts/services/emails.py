@@ -31,9 +31,16 @@ def _send(to: str, subject: str, template: str, context: dict) -> None:
 
 def send_verification_email(user: User) -> None:
     link = _frontend_link(
-        "/verify-email", uid=encode_uid(user), token=email_verification_token.make_token(user)
+        "/verify-email",
+        uid=encode_uid(user),
+        token=email_verification_token.make_token(user),
     )
-    _send(user.email, "Verify your email address", "verify_email", {"user": user, "link": link})
+    _send(
+        user.email,
+        "Verify your email address",
+        "verify_email",
+        {"user": user, "link": link},
+    )
 
 
 def send_account_exists_email(email: str) -> None:
@@ -47,6 +54,13 @@ def send_account_exists_email(email: str) -> None:
 
 def send_password_reset_email(user: User) -> None:
     link = _frontend_link(
-        "/reset-password", uid=encode_uid(user), token=password_reset_token.make_token(user)
+        "/reset-password",
+        uid=encode_uid(user),
+        token=password_reset_token.make_token(user),
     )
-    _send(user.email, "Reset your password", "password_reset", {"user": user, "link": link})
+    _send(
+        user.email,
+        "Reset your password",
+        "password_reset",
+        {"user": user, "link": link},
+    )

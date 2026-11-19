@@ -45,7 +45,10 @@ class AccountSetupComplete(BasePermission):
             and settings.MFA_REQUIRED_FOR_PLATFORM_ADMIN
             and not user.mfa_enabled
         ):
-            self.message, self.code = "MFA enrollment required.", "mfa_enrollment_required"
+            self.message, self.code = (
+                "MFA enrollment required.",
+                "mfa_enrollment_required",
+            )
             return False
         return True
 
@@ -76,7 +79,9 @@ class HasTenant(AccountSetupComplete):
     message = "A tenant is required."
 
     def has_permission(self, request: Request, view: APIView) -> bool:
-        return super().has_permission(request, view) and request.user.tenant_id is not None
+        return (
+            super().has_permission(request, view) and request.user.tenant_id is not None
+        )
 
 
 class NeedsOnboarding(BasePermission):
@@ -94,7 +99,9 @@ class IsPlatformAdminRole(BasePermission):
     message = "Platform admin role required."
 
     def has_permission(self, request: Request, view: APIView) -> bool:
-        return _is_authenticated(request) and request.user.role == User.Role.PLATFORM_ADMIN
+        return (
+            _is_authenticated(request) and request.user.role == User.Role.PLATFORM_ADMIN
+        )
 
 
 class RequiresCustomHeader(BasePermission):
@@ -107,4 +114,7 @@ class RequiresCustomHeader(BasePermission):
     message = "Missing required X-Requested-With header."
 
     def has_permission(self, request: Request, view: APIView) -> bool:
-        return request.headers.get(settings.AUTH_CUSTOM_HEADER) == settings.AUTH_CUSTOM_HEADER_VALUE
+        return (
+            request.headers.get(settings.AUTH_CUSTOM_HEADER)
+            == settings.AUTH_CUSTOM_HEADER_VALUE
+        )

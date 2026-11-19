@@ -43,7 +43,9 @@ def create_tenant(name: str) -> Tenant:
             with transaction.atomic():
                 return Tenant.objects.create(name=name, slug=slug)
         except IntegrityError:
-            suffix = get_random_string(SLUG_SUFFIX_LENGTH, "abcdefghijklmnopqrstuvwxyz0123456789")
+            suffix = get_random_string(
+                SLUG_SUFFIX_LENGTH, "abcdefghijklmnopqrstuvwxyz0123456789"
+            )
             slug = f"{base}-{suffix}"
     raise RuntimeError("Could not generate a unique tenant slug.")
 

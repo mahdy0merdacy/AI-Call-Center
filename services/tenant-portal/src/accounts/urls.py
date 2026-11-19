@@ -13,7 +13,11 @@ auth_urlpatterns = [
     path("login/", auth.LoginView.as_view(), name="login"),
     path("refresh/", auth.RefreshView.as_view(), name="refresh"),
     path("logout/", auth.LogoutView.as_view(), name="logout"),
-    path("password-reset/", auth.PasswordResetRequestView.as_view(), name="password-reset"),
+    path(
+        "password-reset/",
+        auth.PasswordResetRequestView.as_view(),
+        name="password-reset",
+    ),
     path(
         "password-reset/confirm/",
         auth.PasswordResetConfirmView.as_view(),
@@ -24,7 +28,9 @@ auth_urlpatterns = [
     path("mfa/totp/setup/", mfa.TOTPSetupView.as_view(), name="mfa-totp-setup"),
     path("mfa/totp/confirm/", mfa.TOTPConfirmView.as_view(), name="mfa-totp-confirm"),
     path("mfa/verify/", mfa.MFAVerifyView.as_view(), name="mfa-verify"),
-    path("google/exchange/", google.GoogleExchangeView.as_view(), name="google-exchange"),
+    path(
+        "google/exchange/", google.GoogleExchangeView.as_view(), name="google-exchange"
+    ),
     path("onboarding/", google.OnboardingView.as_view(), name="onboarding"),
 ]
 

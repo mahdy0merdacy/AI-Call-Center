@@ -33,7 +33,9 @@ def _master_key() -> bytes:
     except (binascii.Error, ValueError) as exc:
         raise ImproperlyConfigured("MFA_ENCRYPTION_KEY must be base64.") from exc
     if len(key) < _MIN_MASTER_KEY_BYTES:
-        raise ImproperlyConfigured("MFA_ENCRYPTION_KEY must decode to at least 32 bytes.")
+        raise ImproperlyConfigured(
+            "MFA_ENCRYPTION_KEY must decode to at least 32 bytes."
+        )
     return key
 
 

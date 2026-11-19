@@ -1,5 +1,6 @@
 """Structured JSON logging with correlation ids and sensitive-data masking."""
-#Structured logging setup
+
+# Structured logging setup
 import json
 import logging
 import re
@@ -8,7 +9,9 @@ from datetime import UTC, datetime
 
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
-_EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+_EMAIL_RE = re.compile(
+    r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+)
 _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 # Attributes present on every LogRecord; anything else came from `extra=`.

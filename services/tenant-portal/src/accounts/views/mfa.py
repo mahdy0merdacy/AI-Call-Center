@@ -28,7 +28,9 @@ MFAErrorSerializer = inline_serializer(
 
 
 def _mfa_error(message: str, code: str) -> Response:
-    return Response({"detail": message, "code": code}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response(
+        {"detail": message, "code": code}, status=status.HTTP_401_UNAUTHORIZED
+    )
 
 
 class TOTPSetupView(APIView):
@@ -69,7 +71,9 @@ class TOTPConfirmView(APIView):
                 request.user, serializer.validated_data["code"], request._request
             )
         except mfa.NoPendingEnrollment:
-            return detail_response("No pending MFA enrollment.", status.HTTP_400_BAD_REQUEST)
+            return detail_response(
+                "No pending MFA enrollment.", status.HTTP_400_BAD_REQUEST
+            )
         except mfa.InvalidMFACode:
             return detail_response("Invalid code.", status.HTTP_400_BAD_REQUEST)
         return Response({"backup_codes": codes}, headers={"Cache-Control": "no-store"})
@@ -91,9 +95,13 @@ class MFAVerifyView(PublicAPIView):
         data = serializer.validated_data
         django_request = request._request
         try:
-            user = mfa.verify_mfa_challenge(data["mfa_token"], data["code"], django_request)
+            user = mfa.verify_mfa_challenge(
+                data["mfa_token"], data["code"], django_request
+            )
         except mfa.InvalidMFAToken:
             return _mfa_error("MFA session expired; log in again.", "mfa_token_invalid")
         except mfa.InvalidMFACode:
             return _mfa_error("Invalid MFA code.", "mfa_code_invalid")
-        return token_response(complete_login(django_request, user, EventType.LOGIN_SUCCESS))
+        return token_response(
+            complete_login(django_request, user, EventType.LOGIN_SUCCESS)
+        )
