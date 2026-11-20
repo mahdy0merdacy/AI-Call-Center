@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+data/synthetic/
+models/
+*.pt
+*.onnx
+*.log

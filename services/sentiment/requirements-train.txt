@@ -1,0 +1,7 @@
+# Training deps. Install torch separately with CUDA first (see README):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+transformers>=4.44
+datasets>=2.20
+accelerate>=0.33
+scikit-learn>=1.5
+numpy
