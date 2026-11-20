@@ -1,4 +1,4 @@
-"""Bronze: calls.events.v1 -> Delta on the lake, decoded and redacted.
+"""Bronze: calls.events.v1 and calls.sentiment.v1 -> Delta on the lake, decoded and redacted.
 
     SPARK_REMOTE=sc://localhost:15002 .venv/bin/python data/spark/jobs/bronze_call_events.py
 
@@ -19,6 +19,11 @@ What a run does (DDIA.md §7, §15, §17):
     (pii) options in events.proto, not by a list here.
   - Records that are not our wire format, or do not decode, go to a quarantine
     table instead of failing the run or vanishing.
+
+Both topics carry the same Event schema and land in the SAME bronze table; the
+`topic` and `event_type` columns tell them apart. Each topic has its own
+streams and checkpoints (see SOURCES), run one after the other so only one query
+at a time writes the bronze table.
 
 Bronze is partitioned by INGEST date, not event date. A late event lands in
 today's partition, so a past partition is never rewritten. Silver re-sorts by
@@ -75,6 +80,11 @@ EVENT, pii_of, PII = _load_schema()
 
 KAFKA = os.environ.get("KAFKA_BOOTSTRAP", "kafka-1:19092")
 TOPIC = "calls.events.v1"
+# (checkpoint-name prefix, topic). The first keeps the ORIGINAL checkpoint names,
+# so an existing lake resumes exactly where it stopped. Every other topic gets its
+# own checkpoints: Spark does not support changing `subscribe` on an existing one.
+# calls.sentiment.v1 = emotions from services/sentiment, same Event schema.
+SOURCES = (("", TOPIC), ("sentiment_", "calls.sentiment.v1"))
 LAKE = os.environ.get("LAKE", "s3a://lake")
 BRONZE = f"{LAKE}/bronze/call_events"
 QUARANTINE = f"{LAKE}/bronze/call_events_quarantine"
@@ -127,10 +137,10 @@ def redact(e: Column, src: str) -> Column:
     return e.dropFields(*drop) if drop else e
 
 
-def decoded(spark: SparkSession) -> DataFrame:
+def decoded(spark: SparkSession, topic: str = TOPIC) -> DataFrame:
     raw = (spark.readStream.format("kafka")
            .option("kafka.bootstrap.servers", KAFKA)
-           .option("subscribe", TOPIC)
+           .option("subscribe", topic)
            .option("startingOffsets", "earliest")
            .option("maxOffsetsPerTrigger", 50_000)
            .load())
@@ -178,16 +188,20 @@ def quarantine_rows(df: DataFrame) -> DataFrame:
                     F.to_date("kafka_ts").alias("ingest_date")))
 
 
-def ingest(spark: SparkSession) -> dict:
-    """One availableNow run of both sinks. Returns rows written per sink."""
-    df = decoded(spark)
+def ingest_source(spark: SparkSession, prefix: str, topic: str) -> dict:
+    """One availableNow run of both sinks for one topic. Rows read per sink."""
+    df = decoded(spark, topic)
     queries = {
-        name: (rows.writeStream.format("delta")
-               .option("checkpointLocation", f"{CHECKPOINTS}/{name}")
-               .partitionBy("ingest_date")
-               .trigger(availableNow=True)
-               .queryName(f"bronze_call_events_{name}")
-               .start(path))
+        f"{prefix}{name}": (rows.writeStream.format("delta")
+                            .option("checkpointLocation", f"{CHECKPOINTS}/{prefix}{name}")
+                            # A new payload type in events.proto adds columns to the
+                            # `payload` struct; without this, appending to a table written
+                            # before the change fails with a schema mismatch.
+                            .option("mergeSchema", "true")
+                            .partitionBy("ingest_date")
+                            .trigger(availableNow=True)
+                            .queryName(f"bronze_call_events_{prefix}{name}")
+                            .start(path))
         for name, rows, path in (("events", bronze_rows(df), BRONZE),
                                  ("quarantine", quarantine_rows(df), QUARANTINE))
     }
@@ -198,6 +212,14 @@ def ingest(spark: SparkSession) -> dict:
         q.awaitTermination()
         stats[f"{name}_kafka_records_read"] = sum(
             p["numInputRows"] or 0 for p in q.recentProgress)
+    return stats
+
+
+def ingest(spark: SparkSession) -> dict:
+    """Run every source in turn. Returns rows read per sink, plus table totals."""
+    stats: dict = {}
+    for prefix, topic in SOURCES:
+        stats.update(ingest_source(spark, prefix, topic))
     stats["bronze_total"] = spark.read.format("delta").load(BRONZE).count()
     stats["quarantine_total"] = spark.read.format("delta").load(QUARANTINE).count()
     return stats
