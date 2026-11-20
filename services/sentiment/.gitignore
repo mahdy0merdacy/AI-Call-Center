@@ -5,3 +5,4 @@ models/
 *.pt
 *.onnx
 *.log
+.coverage
