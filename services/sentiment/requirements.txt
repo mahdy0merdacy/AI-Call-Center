@@ -1,0 +1,10 @@
+# Sentiment service runtime (CPU inference). Training deps are in requirements-train.txt.
+# CPU-only torch: ~200 MB instead of ~2.5 GB of CUDA libraries. The "+cpu" build only
+# exists on PyTorch's own index, hence the extra index line.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+transformers==5.23.0
+fastapi==0.165.0
+uvicorn==0.54.0
+confluent-kafka==2.16.0   # consumer worker (app.consumer)
+protobuf==7.36.2          # generated code in gen/ needs >= 7.35
