@@ -84,3 +84,16 @@ orchestrator:
         - ci/templates/**/*
         - .gitlab-ci.yml
   
+
+sentiment:
+  extends: .child
+  trigger:
+    include: services/sentiment/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/sentiment/**/*
+        - data/gen/**/*            # the event contract it reads and writes
+        - ci/templates/**/*
+        - .gitlab-ci.yml
