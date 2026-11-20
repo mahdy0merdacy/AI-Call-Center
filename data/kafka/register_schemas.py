@@ -3,8 +3,8 @@
     .venv/bin/python data/kafka/register_schemas.py           # register
     .venv/bin/python data/kafka/register_schemas.py --check   # dry run: would it be accepted?
 
-Subjects follow the TopicNameStrategy: `<topic>-value`. Three topics share the
-`Event` schema, so the same text is registered under three subjects; the
+Subjects follow the TopicNameStrategy: `<topic>-value`. Four topics share the
+`Event` schema, so the same text is registered under four subjects; the
 registry dedupes identical schemas and hands back ONE id. That id is what each
 record carries in its 5-byte header (see smoke.py).
 
@@ -22,7 +22,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTO = ROOT / "proto/aicallcenter/events/v1/events.proto"
-SUBJECTS = ["calls.events.v1-value", "calls.partials.v1-value", "dlq.calls.events.v1-value"]
+SUBJECTS = ["calls.events.v1-value", "calls.partials.v1-value", "dlq.calls.events.v1-value",
+            "calls.sentiment.v1-value"]
 COMPAT = "FULL_TRANSITIVE"
 
 

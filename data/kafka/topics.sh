@@ -23,6 +23,9 @@ TOPICS=(
   "calls.events.v1|6|delete|$((7 * DAY))|$((256 * MB))"
   "calls.partials.v1|6|delete|$((1 * DAY))|$((64 * MB))"
   "calls.summary.v1|6|compact|-1|-1"
+  # Emotion results from services/sentiment. Derived data: it can be recomputed from
+  # calls.events.v1, so the same 7 days of retention is enough.
+  "calls.sentiment.v1|6|delete|$((7 * DAY))|$((256 * MB))"
   "dlq.calls.events.v1|1|delete|$((14 * DAY))|$((256 * MB))"
 )
 
