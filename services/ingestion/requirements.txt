@@ -1,0 +1,4 @@
+# Runtime dependencies, pinned exactly (same policy as the other services).
+# Text extraction and the embedding model are added in later steps.
+pymongo==4.20.1
+psycopg[binary]==3.3.9

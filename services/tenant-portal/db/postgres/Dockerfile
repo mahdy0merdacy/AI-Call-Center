@@ -8,3 +8,5 @@
 FROM pgvector/pgvector:pg16
 
 COPY --chmod=644 init.sql /docker-entrypoint-initdb.d/01-init.sql
+
+COPY --chmod=644 02-pgvector.sql /docker-entrypoint-initdb.d/02-pgvector.sql

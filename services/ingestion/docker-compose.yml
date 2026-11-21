@@ -1,0 +1,39 @@
+# Local/dev: the ingestion worker, attached to the two stacks it needs.
+# Start those first (each from its own folder):
+#   services/documents:      docker compose up -d      -> MongoDB + uploads volume
+#   services/tenant-portal:  docker compose up -d db   -> Postgres with document_chunks
+# Then, here (copy .env.example to .env first):
+#   docker compose up --build
+name: aicc-ingestion
+
+services:
+  worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Same least-privilege Mongo user as the documents app (readWrite on its DB only):
+      # the worker updates ingestion_status, nothing else.
+      MONGODB_URI: mongodb://${MONGO_APP_USER:-documents_app}:${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}@mongo:27017/${MONGODB_DB:-documents}?authSource=${MONGODB_DB:-documents}
+      MONGODB_DB: ${MONGODB_DB:-documents}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-tenant_portal}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+    volumes:
+      # The documents service's uploads, read-only.
+      - media_data:/data/media:ro
+    networks:
+      - documents   # reaches "mongo"
+      - portal      # reaches "db"
+
+# Created by the other two stacks; this one only joins them.
+networks:
+  documents:
+    external: true
+    name: aicc-documents_default
+  portal:
+    external: true
+    name: aicc-tenant-portal_default
+
+volumes:
+  media_data:
+    external: true
+    name: aicc-documents_media_data
