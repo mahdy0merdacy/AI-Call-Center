@@ -10,3 +10,5 @@ FROM pgvector/pgvector:pg16
 COPY --chmod=644 init.sql /docker-entrypoint-initdb.d/01-init.sql
 
 COPY --chmod=644 02-pgvector.sql /docker-entrypoint-initdb.d/02-pgvector.sql
+
+COPY --chmod=644 03-rag-columns.sql /docker-entrypoint-initdb.d/03-rag-columns.sql

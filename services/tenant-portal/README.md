@@ -52,6 +52,13 @@ Then put both into `db/postgres/init.sql` (keep the header comment, drop any
 `python manage.py migrate --check` exits 0. To start again from an empty database, remove
 the volume: `docker compose down -v`.
 
+**RAG tables (maintained by hand).** `db/postgres/02-pgvector.sql` (pgvector extension +
+`document_chunks` table) and `db/postgres/03-rag-columns.sql` (embedding_model,
+content_hash, content_tsv + its index) are NOT part of the init.sql regeneration above:
+keep them when you regenerate init.sql. Fresh volumes run them automatically. On an
+existing database (keep your data, never `down -v`), apply each one once, in order:
+`Get-Content db/postgres/03-rag-columns.sql | docker compose exec -T db psql -U portal -d tenant_portal -v ON_ERROR_STOP=1`
+
 ## Secrets
 
 No secret is stored in this repository. Real values live only in:
