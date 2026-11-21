@@ -9,6 +9,10 @@ ARG BASE=python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391b
 FROM ${BASE} AS deps
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
+# CPU-only torch FIRST, from the PyTorch CPU index (~200 MB instead of ~3 GB for
+# the default GPU build). requirements.txt pins the same version, so the next
+# install sees it as already satisfied.
+RUN /opt/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0
 COPY requirements.txt /tmp/requirements.txt
 RUN /opt/venv/bin/pip install -r /tmp/requirements.txt
 
@@ -17,11 +21,17 @@ FROM ${BASE}
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    MEDIA_ROOT=/data/media
+    MEDIA_ROOT=/data/media \
+    HF_HOME=/models/huggingface
 
 # Same numeric non-root user as the documents service (uid 10001), so the shared
 # media volume is readable. It is mounted read-only: this worker never writes files.
-RUN useradd --system --uid 10001 --no-create-home app
+# /models holds the downloaded embedding model (hf_cache volume in compose). It is
+# created here, owned by uid 10001, so a NEW volume mounted on it gets the same
+# owner and the worker can write the model there on first start.
+RUN useradd --system --uid 10001 --no-create-home app \
+    && mkdir -p /models/huggingface \
+    && chown -R 10001 /models
 
 COPY --from=deps /opt/venv /opt/venv
 WORKDIR /app

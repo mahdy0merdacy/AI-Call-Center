@@ -1,4 +1,20 @@
 # Runtime dependencies, pinned exactly (same policy as the other services).
-# Text extraction and the embedding model are added in later steps.
+
+# Databases
 pymongo==4.20.1
 psycopg[binary]==3.3.9
+pgvector==0.5.1                # numpy arrays <-> Postgres "vector" type
+
+# Text extraction (chunking.extract_text)
+pypdf==7.1.1
+python-docx==1.2.0
+openpyxl==3.1.5
+
+# Embeddings (BAAI/bge-m3)
+# torch: in Docker, the Dockerfile installs the CPU-only build FIRST (from the
+# PyTorch CPU index), so this line is already satisfied there. Without that, pip
+# on Linux would download the GPU build: ~3 GB more, for a GPU we don't use.
+# On Windows, PyPI's torch is CPU-only already, so `pip install -r` is fine.
+torch==2.15.0
+sentence-transformers==6.3.0
+numpy==2.5.5

@@ -17,9 +17,21 @@ services:
       MONGODB_DB: ${MONGODB_DB:-documents}
       DATABASE_URL: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-tenant_portal}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_THREADS: ${EMBEDDING_THREADS:-2}
+      STUCK_AFTER_MINUTES: ${STUCK_AFTER_MINUTES:-10}
+    # Ingestion must never slow down live calls (decision 11). These caps make sure
+    # the worker can't take all the machine's CPU or memory, whatever happens in
+    # the code. bge-m3 needs ~3 GB of RAM: if the worker is "Killed", raise
+    # WORKER_MEMORY (and Docker Desktop's own memory limit, Settings > Resources).
+    cpus: ${WORKER_CPUS:-2}
+    mem_limit: ${WORKER_MEMORY:-4g}
     volumes:
       # The documents service's uploads, read-only.
       - media_data:/data/media:ro
+      # Downloaded embedding model (~2.3 GB): kept between restarts and rebuilds,
+      # so it is downloaded only once.
+      - hf_cache:/models
     networks:
       - documents   # reaches "mongo"
       - portal      # reaches "db"
@@ -37,3 +49,6 @@ volumes:
   media_data:
     external: true
     name: aicc-documents_media_data
+  # Owned by this stack (created on first `up`). Never delete it with `down -v`
+  # unless you want to download the model again.
+  hf_cache:
