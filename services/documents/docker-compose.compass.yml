@@ -1,0 +1,19 @@
+# Optional, local dev only: opens the project's MongoDB to MongoDB Compass.
+#
+# The normal stack (docker-compose.yml) keeps MongoDB closed: only the app talks to
+# it. Add this file only when you want to look at the data with Compass:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.compass.yml up -d mongo
+#
+# Then, in Compass (password = MONGO_APP_PASSWORD from .env):
+#   mongodb://documents_app:<MONGO_APP_PASSWORD>@localhost:27018/documents?authSource=documents
+#
+# Close it again with:   docker compose up -d mongo
+#
+# Port 27018 on purpose: 27017 is often taken by a MongoDB installed on Windows
+# (Compass on localhost:27017 would show THAT database, not this project's).
+# Bound to 127.0.0.1: reachable from this PC only, never from the network.
+services:
+  mongo:
+    ports:
+      - "127.0.0.1:27018:27017"
