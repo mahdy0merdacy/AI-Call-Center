@@ -1,0 +1,3 @@
+[submodule "simul_whisper"]
+	path = simul_whisper
+	url = https://github.com/backspacetg/simul_whisper.git
