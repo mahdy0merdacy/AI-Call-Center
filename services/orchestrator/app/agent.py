@@ -23,7 +23,7 @@ import time
 
 import aiohttp
 
-from .flow import CallFlowState, Tenant, TurnAction, route
+from .flow import CallFlowState, Tenant, TurnAction, route, route_by_slot
 from .tools import ToolRegistry
 
 log = logging.getLogger("agent")
@@ -102,10 +102,20 @@ class Agent:
     # of silence, where the first clause lands in ~0.6s.
 
     def _emit_clauses(self, text: str, on_say):
-        for clause in list(self._drain(text)) or [text]:
+        """Speak complete text (greeting, slot prompts) clause by clause.
+
+        _drain holds back the unfinished tail, which is right while tokens are
+        still streaming in, but scripted text is already whole: the tail is its
+        last sentence, and it must be spoken too ("…assistant. How can I help?").
+        """
+        rest = text
+        for clause in self._drain(text):
             if self.cancelled:
                 return
             on_say(clause.strip())
+            rest = rest[len(clause):]
+        if rest.strip() and not self.cancelled:
+            on_say(rest.strip())
 
     # -- greeting ---------------------------------------------------------
 
@@ -174,13 +184,17 @@ class Agent:
                 return action
             return TurnAction(kind="ready_for_tool", flow=self.state.active)
 
-        flow = route(self.tenant, user_text)
+        flow = (route(self.tenant, user_text)
+                or route_by_slot(self.tenant, user_text, self.state))
         if flow is None:
             return TurnAction(kind="open")
         if flow.requires_flow and flow.requires_flow not in self.state.completed:
             flow = next((f for f in self.tenant.flows
                          if f.intent == flow.requires_flow), flow)
-        return self.state.begin(flow)
+        action = self.state.begin(flow, user_text)
+        if action.kind == "ready_for_tool":
+            return TurnAction(kind="ready_for_tool", flow=self.state.active)
+        return action
 
     async def _llm_turn(self, session, user_text, action, on_event, on_say):
         """Grounded (tool result) or open (knowledge) — both need phrasing."""
@@ -203,8 +217,7 @@ class Agent:
                 f"How to respond: {guidance}\n"
                 "Use only the values above. Never invent a date, status or figure."
             )
-            self.state.completed.add(action.flow.intent)
-            self.state.reset_flow()
+            self.state.complete(result)
 
         if action.kind == "open" and self.tenant.flows:
             # THE IMPORTANT GUARD. With no flow matched, nothing has been looked
