@@ -20,6 +20,12 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
       EMBEDDING_THREADS: ${EMBEDDING_THREADS:-2}
       STUCK_AFTER_MINUTES: ${STUCK_AFTER_MINUTES:-10}
+      # Model download (first start only). The newer "Xet" downloader threw away a
+      # partly downloaded model when the connection dropped, then stalled. The classic
+      # download resumes from its .incomplete file after an interruption.
+      HF_HUB_DISABLE_XET: "1"
+      # Seconds to wait when a download stalls (default 10): slow connections.
+      HF_HUB_DOWNLOAD_TIMEOUT: "60"
     # Ingestion must never slow down live calls (decision 11). These caps make sure
     # the worker can't take all the machine's CPU or memory, whatever happens in
     # the code. bge-m3 needs ~3 GB of RAM: if the worker is "Killed", raise

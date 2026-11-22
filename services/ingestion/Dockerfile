@@ -7,14 +7,20 @@ ARG BASE=python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391b
 # ── deps: build the virtualenv once, copy it into a clean runtime ──────────────
 # checkov:skip=CKV_DOCKER_7:BASE is pinned by digest in the ARG above (checkov cannot resolve ARGs)
 FROM ${BASE} AS deps
-ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+# Slow or unstable internet: wait up to 120 s when a download stalls (default 15 s)
+# and retry up to 10 times, instead of failing the whole build.
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 RUN python -m venv /opt/venv
+# pip's download cache lives in a BuildKit cache mount: kept between builds (a retry
+# does not download torch's ~210 MB again) but NOT copied into the image.
 # CPU-only torch FIRST, from the PyTorch CPU index (~200 MB instead of ~3 GB for
 # the default GPU build). requirements.txt pins the same version, so the next
 # install sees it as already satisfied.
-RUN /opt/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0
 COPY requirements.txt /tmp/requirements.txt
-RUN /opt/venv/bin/pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install -r /tmp/requirements.txt
 
 # ── runtime ────────────────────────────────────────────────────────────────────
 FROM ${BASE}
