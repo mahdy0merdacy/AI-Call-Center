@@ -22,10 +22,13 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from .dates import parse_date
 
 log = logging.getLogger("flow")
 
@@ -98,9 +101,17 @@ class Slot:
     max_attempts: int = 3
     type: str = "text"
     silence_ms: int | None = None
+    # Date slots: the known fact a relative date counts from, e.g. the current
+    # estimated_delivery for "push it back three days".
+    relative_to: str | None = None
 
-    def extract(self, utterance: str) -> str | None:
+    def extract(self, utterance: str, facts: dict[str, Any] | None = None,
+                today: date | None = None) -> str | None:
         """Pull a valid value out of what the caller said, or None.
+
+        Date slots parse spoken dates (app/dates.py) and return ISO 8601; `facts`
+        and `today` are what relative dates count from. Every other slot type is
+        matched against its pattern, as below.
 
         Callers say "it's AC4471X209" or "A C four four seven one X two zero nine",
         so we try the raw text, the spoken-form normalisation, and word-bounded
@@ -110,6 +121,9 @@ class Slot:
         ANYWHERE in the normalised text, which matched ten letters out of the
         middle of "um I do not know" and happily looked it up.
         """
+        if self.type == "date":
+            return self._extract_date(utterance, facts or {}, today or date.today())
+
         rx = re.compile(self.pattern)
         raw = utterance.strip()
 
@@ -170,6 +184,18 @@ class Slot:
                         return cand
         return None
 
+    def _extract_date(self, utterance: str, facts: dict[str, Any],
+                      today: date) -> str | None:
+        base = None
+        ref = facts.get(self.relative_to) if self.relative_to else None
+        if isinstance(ref, str):
+            try:
+                base = date.fromisoformat(ref[:10])
+            except ValueError:
+                base = None
+        d = parse_date(utterance, today=today, base=base)
+        return d.isoformat() if d else None
+
 
 @dataclass
 class Flow:
@@ -214,12 +240,13 @@ def load_tenants(directory: Path = TENANTS_DIR) -> dict[str, Tenant]:
             slots = []
             for s in f.get("slots") or []:
                 slots.append(Slot(
-                    name=s["name"], pattern=s["pattern"], prompt=s["prompt"],
+                    name=s["name"], pattern=s.get("pattern", ""), prompt=s["prompt"],
                     reprompt=s.get("reprompt", s["prompt"]),
                     on_invalid=s.get("on_invalid", ""),
                     max_attempts=s.get("max_attempts", 3),
                     type=s.get("type", "text"),
                     silence_ms=(s.get("endpointing") or {}).get("silence_ms"),
+                    relative_to=s.get("relative_to"),
                 ))
             flows.append(Flow(
                 intent=f["intent"], utterances=f.get("utterances") or [], slots=slots,
@@ -293,6 +320,36 @@ class SlotOutcome:
     utterance: str = ""             # set when rejected
 
 
+def route_by_slot(tenant: Tenant, utterance: str,
+                  state: CallFlowState | None = None) -> Flow | None:
+    """Fallback when the keywords miss: route on a valid value for a flow's first slot.
+
+    A caller who just says "it's AC4471X209" wants that parcel tracked, and STT
+    regularly mangles the routing words themselves (a live call heard "where is
+    my parcel" as "may locate the parcel"). Without this, the call stays in open
+    conversation, where no tool can run, and the LLM can only stall.
+    Likewise, once a parcel has been looked up, a bare date ("the third of
+    October") starts the reschedule. A flow that requires another is considered
+    only once that one has completed; its value alone would not prove it.
+    The slot checked is the first one the call does not already know.
+    """
+    completed = state.completed if state else set()
+    for f in tenant.flows:
+        if f.internal or not f.slots:
+            continue
+        if f.requires_flow and f.requires_flow not in completed:
+            continue
+        inherited = state.inherited(f) if state else {}
+        slot = next((s for s in f.slots if s.name not in inherited), None)
+        if slot is None:
+            continue
+        facts = state.facts if state else {}
+        today = state.today if state else None
+        if slot.extract(utterance, facts, today):
+            return f
+    return None
+
+
 @dataclass
 class TurnAction:
     """What the flow decided. `kind` tells the agent how much work to do."""
@@ -316,11 +373,33 @@ class CallFlowState:
         self.filled: dict[str, str] = {}
         self.attempts: dict[str, int] = {}
         self.completed: set[str] = set()
+        # What earlier flows established: their slot values and their tool's data.
+        # A flow that requires another reuses them, so rescheduling does not ask
+        # for the shipment ID the caller gave a minute ago.
+        self.facts: dict[str, Any] = {}
+        self.today: date | None = None      # None = the real date; tests pin it
 
     def reset_flow(self):
         self.active = None
         self.filled = {}
         self.attempts = {}
+
+    def complete(self, tool_data: dict[str, Any] | None = None):
+        """The active flow's tool has run: remember what it established, then reset."""
+        if self.active:
+            self.completed.add(self.active.intent)
+            self.facts.update(self.filled)
+            self.facts.update({k: v for k, v in (tool_data or {}).items()
+                               if isinstance(v, (str, int, float, bool))})
+        self.reset_flow()
+
+    def inherited(self, flow: Flow) -> dict[str, str]:
+        """Slot values a flow takes from earlier in the call. Only a flow that
+        requires another inherits: tracking a second parcel must still ask."""
+        if not flow.requires_flow:
+            return {}
+        return {s.name: str(self.facts[s.name]) for s in flow.slots
+                if s.name in self.facts}
 
     def _pending_slot(self) -> Slot | None:
         if not self.active:
@@ -330,11 +409,15 @@ class CallFlowState:
                 return s
         return None
 
-    def begin(self, flow: Flow) -> TurnAction:
+    def begin(self, flow: Flow, utterance: str = "") -> TurnAction:
+        """Enter a flow. If the utterance that started it already carries the first
+        slot's value ("where is my parcel, AC4471X209"), take it instead of asking."""
         self.active = flow
-        self.filled = {}
+        self.filled = self.inherited(flow)
         self.attempts = {}
         slot = self._pending_slot()
+        if slot and utterance and slot.extract(utterance, self.facts, self.today):
+            return self.advance(utterance)
         if slot:
             return TurnAction(kind="say", text=slot.prompt, flow=flow,
                               next_silence_ms=slot.silence_ms, next_slot=slot.name)
@@ -347,7 +430,7 @@ class CallFlowState:
             return TurnAction(kind="ready_for_tool", flow=self.active)
 
         attempt = self.attempts.get(slot.name, 0) + 1
-        value = slot.extract(utterance)
+        value = slot.extract(utterance, self.facts, self.today)
         if value:
             self.filled[slot.name] = value
             log.info("slot %s filled: %r", slot.name, value)
