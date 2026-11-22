@@ -81,6 +81,29 @@ document 5c33... (tenant cfc0...) completed: 14 chunks in 4.2 s
 | `POLL_INTERVAL_SECONDS` | `5` | wait between two looks when nothing is pending |
 | `WORKER_CPUS` / `WORKER_MEMORY` | `2` / `4g` | Docker limits (compose), so ingestion can't starve live calls |
 
+## Dev scripts (Mongo)
+
+`scripts/` holds two mongosh scripts for testing. They are not part of the image.
+Run them from **`services/documents`** (where the `mongo` service is), each as ONE line.
+Parameters are passed with `-e NAME=value`, which avoids the PowerShell 5.1 quoting
+problem with `--eval "..."`.
+
+| Script | What | Changes data? |
+|---|---|---|
+| `list_documents.js` | every document of every tenant: id, tenant, status, file, error | no |
+| `set_status.js` | set chosen documents to `pending` or `failed` | only with `-e CONFIRM=yes` (otherwise a dry run) |
+
+```powershell
+# List (optionally: -e STATUS=pending)
+Get-Content ../ingestion/scripts/list_documents.js | docker compose exec -T mongo sh -c 'cat > /tmp/s.js && mongosh --quiet -u $MONGO_INITDB_ROOT_USERNAME -p $MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin documents /tmp/s.js'
+
+# Put documents back to pending, to process them again (dry run; add -e CONFIRM=yes to apply)
+Get-Content ../ingestion/scripts/set_status.js | docker compose exec -T -e TO=pending -e FILES=stock_document.pdf mongo sh -c 'cat > /tmp/s.js && mongosh --quiet -u $MONGO_INITDB_ROOT_USERNAME -p $MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin documents /tmp/s.js'
+```
+
+The real product needs tenant-scoped **Retry** and **Delete** endpoints in the documents
+service (planned with document versions, step 3b); these scripts are only for us.
+
 ## Tests and lint
 
 No database, model or Docker needed:
