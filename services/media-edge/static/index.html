@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media edge — live STT</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg:#15171c; --dim:#6b7280; --faint:#9aa2af; --line:#dcdfe6; --bg:#fbfbfc;
+    --accent:#2563eb; --ok:#15803d; --warn:#b45309; --err:#b91c1c;
+    --panel: color-mix(in srgb, var(--fg) 3%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e9ebee; --dim:#9aa2af; --faint:#6b7280; --line:#2b303b; --bg:#131519;
+            --accent:#7aa2f7; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; }
+  }
+  * { box-sizing:border-box; }
+  body { font:15px/1.6 ui-sans-serif,system-ui,sans-serif; margin:0; padding:1.75rem 1.25rem;
+         background:var(--bg); color:var(--fg); }
+  main { max-width:54rem; margin:0 auto; }
+  h1 { font-size:1.15rem; margin:0 0 .2rem; }
+  .sub { color:var(--dim); margin:0 0 1.4rem; font-size:.9rem; }
+  .sub code { font-size:.85em; }
+
+  .bar { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
+  button { font:inherit; padding:.5rem 1.1rem; border-radius:.45rem; cursor:pointer;
+           border:1px solid var(--line); background:transparent; color:var(--fg); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button[disabled] { opacity:.45; cursor:default; }
+  #state { font-variant:small-caps; color:var(--dim); }
+  #state.live { color:var(--ok); }
+  #state.err { color:var(--err); }
+  meter { width:6.5rem; height:8px; }
+
+  .panel { border:1px solid var(--line); border-radius:.55rem; padding:1rem 1.15rem;
+           background:var(--panel); }
+  #transcript { min-height:8.5rem; font-size:1.05rem; line-height:1.75; }
+  #transcript:empty::before { content:"Committed transcript appears here…"; color:var(--faint); }
+  .final { }
+  .final + .final { margin-top:.35rem; }
+  .reply { margin:.35rem 0 .35rem 0; color:var(--accent); }
+  .reply .utt-mark { color:var(--accent); opacity:.75; }
+  .utt-mark { color:var(--faint); font-size:.75em; margin-right:.5rem;
+              font-family:ui-monospace,monospace; }
+  #partial { margin-top:.6rem; color:var(--dim); font-style:italic; min-height:1.6rem; }
+  #partial::before { content:"partial "; font-style:normal; font-size:.72rem;
+                     letter-spacing:.05em; text-transform:uppercase; color:var(--faint);
+                     margin-right:.4rem; }
+  .legend { display:flex; gap:1.2rem; font-size:.78rem; color:var(--dim); margin:.6rem 0 1rem; }
+  .legend b { font-weight:600; color:var(--fg); }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));
+           gap:.55rem; margin-top:1rem; }
+  .stat { border:1px solid var(--line); border-radius:.45rem; padding:.5rem .7rem; }
+  .stat b { display:block; font-size:1.1rem; font-variant-numeric:tabular-nums; font-weight:600; }
+  .stat span { font-size:.7rem; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
+  .stat.speaking b { color:var(--ok); }
+
+  #log { margin-top:1rem; font-family:ui-monospace,monospace; font-size:11.5px;
+         color:var(--dim); white-space:pre-wrap; max-height:11rem; overflow-y:auto; }
+  #log .e { color:var(--err); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Media edge → STT <span id="who" hidden style="font-weight:400;font-size:.8em;color:var(--dim)"></span></h1>
+<p class="sub">Mic → WebRTC → STT → LLM → TTS → back to your speakers. Talk, pause, and the
+agent replies out loud.</p>
+
+<div class="bar">
+  <button id="start" class="primary">Start mic</button>
+  <button id="stop" disabled>Stop</button>
+  <span id="state">idle</span>
+  <meter id="meter" min="0" max="1" value="0" title="input level"></meter>
+</div>
+
+<div class="legend">
+  <span><b>Committed</b> — what the LLM would receive</span>
+  <span><i>partial</i> — display only, may be revised</span>
+  <span style="color:var(--accent)"><b>bot</b> — agent reply (spoken)</span>
+</div>
+
+<div class="panel">
+  <div id="transcript"></div>
+  <div id="partial"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="s-audio">0.0s</b><span>audio sent</span></div>
+  <div class="stat" id="s-speak-box"><b id="s-speak">—</b><span>vad</span></div>
+  <div class="stat"><b id="s-utts">0</b><span>utterances</span></div>
+  <div class="stat"><b id="s-words">0</b><span>words committed</span></div>
+  <div class="stat"><b id="s-first">—</b><span>first partial</span></div>
+  <div class="stat"><b id="s-reply">—</b><span>first audio</span></div>
+  <div class="stat"><b id="s-flow">—</b><span>flow</span></div>
+  <div class="stat"><b id="s-slots">—</b><span>slots filled</span></div>
+  <div class="stat"><b id="s-outcome">—</b><span>tool outcome</span></div>
+</div>
+
+<div id="log"></div>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+// /w/<slug> is the per-company widget URL — the slug identifies the tenant.
+const TENANT_SLUG = (location.pathname.match(/^\/w\/([\w-]+)/) || [])[1] || null;
+const t0 = performance.now();
+let pc, stream, audioCtx, rafId, chan, tStart = null, firstAt = null, utts = 0, words = 0;
+let playCtx = null, playHead = 0, playing = [], replyEl = null;
+
+// Sequential gapless-ish playback. Each binary frame is one clause of WAV, and
+// they arrive in order, so schedule each to start when the previous one ends.
+async function playWav(buf) {
+  if (!playCtx) playCtx = new AudioContext();
+  if (playCtx.state === 'suspended') await playCtx.resume();
+  let decoded;
+  try { decoded = await playCtx.decodeAudioData(buf); }
+  catch (e) { log('audio decode failed: ' + e.message, true); return; }
+  const src = playCtx.createBufferSource();
+  src.buffer = decoded;
+  src.connect(playCtx.destination);
+  const now = playCtx.currentTime;
+  if (playHead < now) playHead = now;
+  src.start(playHead);
+  playHead += decoded.duration;
+  playing.push(src);
+  src.onended = () => { playing = playing.filter(x => x !== src); };
+  $('s-speak').textContent = 'bot talking';
+}
+
+function stopPlayback() {
+  playing.forEach(s => { try { s.stop(); } catch (e) {} });
+  playing = [];
+  if (playCtx) playHead = playCtx.currentTime;
+}
+
+function log(msg, err) {
+  const at = ((performance.now() - t0) / 1000).toFixed(2).padStart(6);
+  const line = document.createElement('span');
+  if (err) line.className = 'e';
+  line.textContent = `[${at}s] ${msg}\n`;
+  $('log').append(line);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function waitForIce(pc) {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(res => {
+    const c = () => { if (pc.iceGatheringState === 'complete') {
+      pc.removeEventListener('icegatheringstatechange', c); res(); } };
+    pc.addEventListener('icegatheringstatechange', c);
+  });
+}
+
+function levelMeter(stream) {
+  audioCtx = new AudioContext();
+  const an = audioCtx.createAnalyser(); an.fftSize = 512;
+  audioCtx.createMediaStreamSource(stream).connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  const tick = () => {
+    an.getByteTimeDomainData(buf);
+    let peak = 0;
+    for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
+    $('meter').value = peak;
+    rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+// Committed finals accumulate; the partial is transient and rendered separately.
+// Keeping them visually distinct is the whole point — one feeds the LLM, one doesn't.
+function commitFinal(text) {
+  const d = document.createElement('div');
+  d.className = 'final';
+  const m = document.createElement('span');
+  m.className = 'utt-mark';
+  m.textContent = `#${++utts}`;
+  d.append(m, document.createTextNode(text));
+  $('transcript').append(d);
+  $('partial').textContent = '';
+  words += (text.trim().match(/\S+/g) || []).length;
+  $('s-words').textContent = words;
+  $('s-utts').textContent = utts;
+}
+
+function onMessage(ev) {
+  if (typeof ev.data !== 'string') { playWav(ev.data); return; }   // binary = audio
+  const m = JSON.parse(ev.data);
+  if (m.audio_s != null) $('s-audio').textContent = m.audio_s.toFixed(1) + 's';
+
+  switch (m.type) {
+    case 'tenant':
+      document.title = m.name;
+      $('who').textContent = `${m.name} · ${m.locale} · ${m.voice}`;
+      $('who').hidden = false;
+      log(`tenant ${m.slug} — flows: ${m.flows.join(', ') || 'none'} | tools: ${m.tools.join(', ') || 'none'}`);
+      break;
+    case 'flow':
+      $('s-flow').textContent = m.intent || (m.kind === 'open' ? 'open Q' : '—');
+      $('s-slots').textContent = Object.keys(m.slots || {}).length
+        ? Object.entries(m.slots).map(([k, v]) => `${k}=${v}`).join(' ') : '—';
+      break;
+    case 'tool_result':
+      log(`TOOL ${m.tool} -> ${m.outcome}`);
+      $('s-outcome').textContent = m.outcome;
+      break;
+    case 'escalated':
+      log('ESCALATED');
+      break;
+    case 'set_silence_ms':
+      log(`endpointing -> ${m.value}ms (slot needs longer)`);
+      break;
+    case 'ready':
+      log(`STT ready — ${m.model} on ${m.device}, ${m.segment_length_s}s chunks`);
+      $('state').textContent = 'live'; $('state').className = 'live';
+      break;
+    case 'speech_start':
+      $('s-speak').textContent = 'speaking';
+      $('s-speak-box').classList.add('speaking');
+      log('speech_start');
+      break;
+    case 'partial':
+      if (firstAt === null) {
+        firstAt = (performance.now() - tStart) / 1000;
+        $('s-first').textContent = firstAt.toFixed(1) + 's';
+      }
+      $('partial').textContent = m.text;
+      break;
+    case 'speech_end':
+      $('s-speak').textContent = 'quiet';
+      $('s-speak-box').classList.remove('speaking');
+      log(`speech_end after ${m.silence_ms}ms silence`);
+      break;
+    case 'final':
+      commitFinal(m.text);
+      log(`FINAL: ${m.text}`);
+      replyEl = null;
+      break;
+    case 'token':
+      if (!replyEl) {
+        replyEl = document.createElement('div');
+        replyEl.className = 'reply';
+        const b = document.createElement('span');
+        b.className = 'utt-mark'; b.textContent = 'bot';
+        replyEl.append(b, document.createTextNode(''));
+        $('transcript').append(replyEl);
+      }
+      replyEl.lastChild.textContent += m.text;
+      $('transcript').scrollTop = $('transcript').scrollHeight;
+      break;
+    case 'speaking':
+      break;
+    case 'first_audio_s':
+      $('s-reply').textContent = m.value.toFixed(2) + 's';
+      log(`first audio after ${m.value}s`);
+      break;
+    case 'turn_complete':
+      log(`turn done — ${m.clauses} clause(s) in ${m.total_s}s`);
+      break;
+    case 'barge_in':
+      stopPlayback();
+      log('barge-in — stopped speaking');
+      break;
+    case 'error':
+      log(`STT error ${m.code}: ${m.detail}`, true);
+      $('state').textContent = 'stt error'; $('state').className = 'err';
+      break;
+    case 'closed':
+      log('stt stream closed');
+      break;
+  }
+}
+
+async function start() {
+  $('start').disabled = true;
+  $('state').textContent = 'starting'; $('state').className = '';
+  $('transcript').textContent = ''; $('partial').textContent = '';
+  firstAt = null; utts = 0; words = 0;
+  $('s-utts').textContent = '0'; $('s-words').textContent = '0';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    levelMeter(stream);
+    log(`mic: ${stream.getAudioTracks()[0].label}`);
+
+    pc = new RTCPeerConnection();
+    pc.addEventListener('connectionstatechange', () => log(`connection: ${pc.connectionState}`));
+
+    chan = pc.createDataChannel('events');
+    chan.binaryType = 'arraybuffer';
+    chan.onopen = () => log('data channel open');
+    chan.onmessage = onMessage;
+
+    pc.addTransceiver(stream.getAudioTracks()[0], { direction: 'sendonly', streams: [stream] });
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIce(pc);
+
+    const res = await fetch('/offer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type,
+                             tenant: TENANT_SLUG }),
+    });
+    if (!res.ok) throw new Error(res.statusText);
+    await pc.setRemoteDescription(await res.json());
+    tStart = performance.now();
+    log('streaming — speak now');
+    $('stop').disabled = false;
+  } catch (err) {
+    log(`ERROR: ${err.message}`, true);
+    $('state').textContent = 'failed'; $('state').className = 'err';
+    $('start').disabled = false;
+  }
+}
+
+function stop() {
+  $('stop').disabled = true;
+  stopPlayback();
+  if (rafId) cancelAnimationFrame(rafId);
+  if (audioCtx) audioCtx.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  setTimeout(() => pc && pc.close(), 1500);   // let the tail flush back
+  $('state').textContent = 'stopped'; $('state').className = '';
+  $('start').disabled = false;
+}
+
+$('start').addEventListener('click', start);
+$('stop').addEventListener('click', stop);
+
+const qs = new URLSearchParams(location.search);
+if (qs.has('autostart')) start();
+if (qs.has('stopafter')) setTimeout(stop, parseFloat(qs.get('stopafter')) * 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Tooling config for the orchestrator. Not a package: the service runs as
+# `python -m app.server`, and the image installs requirements.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["gen"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, warnings, import order, bugbear, pyupgrade, async pitfalls
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+exclude = ["^gen/"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+# Start lenient; tighten (check_untyped_defs, then disallow_untyped_defs) over time.
+
+[[tool.mypy.overrides]]
+module = ["gen.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"

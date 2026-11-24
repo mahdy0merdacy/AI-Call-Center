@@ -1,0 +1,23 @@
+# Secrets
+.env
+*/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+stt/
+tts/
+llm/
+orch/
+
+# Audio artifacts
+*.wav
+recording_*.wav
+tts_out_*.wav
+#personal notes
+*.md
+
+
+

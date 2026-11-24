@@ -1,0 +1,14 @@
+# STT service. Torch comes from the CUDA index, not PyPI:
+#   pip install --index-url https://download.pytorch.org/whl/cu130 torch==2.14.0+cu130
+grpcio==1.84.0
+grpcio-tools==1.84.0
+grpcio-health-checking==1.84.0
+faster-whisper==1.2.1      # for the bundled Silero VAD model only
+numpy==2.5.3
+soundfile==0.14.0
+numba==0.67.0
+tiktoken==0.14.0
+more-itertools==11.1.0
+jsonlines==4.0.0
+tqdm
+regex

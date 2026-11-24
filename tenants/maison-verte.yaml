@@ -1,0 +1,49 @@
+# ── Maison Verte ─────────────────────────────────────────────────────────────
+# Demo tenant 3: KNOWLEDGE-DRIVEN, FRENCH.
+# Point it proves: (a) the other path entirely — no mandatory slots, answers come
+# from documents; (b) the whole stack is multilingual, which is the single most
+# visible differentiator per unit of work. STT takes a language param and Magpie's
+# French measured character-perfect in spikes/magpie-tts.
+
+tenant_id: maison-verte
+display_name: Maison Verte
+slug: maisonverte
+locale: fr-FR
+
+voice:
+  speaker: Sofia
+  greeting: "Maison Verte, bonjour. Comment puis-je vous aider ?"
+
+persona: |
+  Vous êtes l'assistant téléphonique de Maison Verte, un magasin de plantes
+  d'intérieur et de jardinage. Vous répondez aux questions sur les produits,
+  l'entretien des plantes, les horaires et les livraisons.
+  Répondez brièvement, deux phrases maximum, sur un ton chaleureux.
+  Si l'information ne figure pas dans la documentation, dites-le franchement
+  et proposez de transférer l'appel. N'inventez jamais un prix ou un stock.
+
+endpointing:
+  silence_ms: 700          # conversational, no codes to read out — keep it snappy
+  min_speech_ms: 200
+
+# No mandatory slots. Nothing is gated; every turn falls through to knowledge.
+flows: []
+
+tools: []
+
+knowledge:
+  namespace: maison-verte
+  sources:
+    - fixtures/knowledge/maison-verte-produits.md
+    - fixtures/knowledge/maison-verte-infos.md
+  # Small enough to sit in the prompt — no retrieval needed for the demo.
+  # Switch to `retrieval` once it outgrows the context window.
+  strategy: in_prompt
+
+guardrails:
+  - "Ne jamais inventer un prix, un stock ou une disponibilité."
+  - "Ne pas donner de conseils phytosanitaires médicaux ou vétérinaires."
+
+escalation:
+  when: ["le client demande un humain", "information absente de la documentation"]
+  message: "Je vous passe un conseiller."

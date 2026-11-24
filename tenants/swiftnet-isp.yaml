@@ -1,0 +1,84 @@
+# ── SwiftNet ─────────────────────────────────────────────────────────────────
+# Demo tenant 2: FLOW + BRANCH.
+# Point it proves: a DIFFERENT slot type with different validation, and a tool
+# whose result changes the conversation's shape — not the same script with the
+# nouns swapped.
+
+tenant_id: swiftnet-isp
+display_name: SwiftNet Broadband
+slug: swiftnet
+locale: en-US
+
+voice:
+  speaker: Aria
+  greeting: "SwiftNet support, you're through to the automated assistant. What's the problem?"
+
+persona: |
+  You are the support line for SwiftNet, a home broadband provider.
+  Callers are usually frustrated — acknowledge the problem before troubleshooting.
+  Give one instruction at a time and wait. Never read out a list of steps at once.
+
+endpointing:
+  silence_ms: 900
+  min_speech_ms: 200
+
+flows:
+  - intent: report_fault
+    utterances:
+      - "my internet is down"
+      - "no connection"
+      - "the wifi isn't working"
+      - "my broadband keeps dropping"
+
+    slots:
+      - name: phone_number
+        type: digits           # different validator from Acme's alphanumeric
+        length: 10
+        prompt: "What's the landline number on the account?"
+        reprompt: "I need the ten-digit number on the account."
+        on_invalid: "That's not ten digits — could you read it again?"
+        pattern: '^[0-9]{10}$'
+        max_attempts: 3
+        endpointing:
+          silence_ms: 1400     # digits get read out slowly, with pauses
+
+    tool: check_line_status
+
+    outcomes:
+      # Same tool, three very different conversations after it.
+      line_ok:
+        guidance: "Line tests clean, so it's likely local. Start troubleshooting."
+        then_flow: troubleshoot
+      area_outage:
+        guidance: "Confirm there's a known outage in their area, give the ETA, apologise. Do NOT troubleshoot — it is not their equipment."
+        then: end
+      account_suspended:
+        guidance: "Say the account is suspended for billing and transfer to accounts. Do not discuss the amount."
+        then: escalate
+      not_found:
+        guidance: "No account on that number. Ask them to confirm it, or offer to transfer."
+
+  - intent: troubleshoot
+    internal: true             # not directly routable; reached from line_ok
+    steps:                     # ordered, one at a time, confirm before advancing
+      - "Ask them to check the router lights and describe the colours."
+      - "Ask them to unplug the router for thirty seconds, then plug it back in."
+      - "Wait for it to come back, then ask if the connection is restored."
+    on_success: "Confirm it's working and close politely."
+    on_failure: escalate
+
+tools:
+  - check_line_status
+
+knowledge:
+  namespace: swiftnet-isp
+  sources:
+    - fixtures/knowledge/swiftnet-faq.md
+
+guardrails:
+  - "Never quote an outage fix time that the tool did not return."
+  - "Never discuss billing amounts — transfer to accounts."
+
+escalation:
+  when: ["caller asks for a human", "troubleshoot exhausted", "account_suspended"]
+  message: "I'll put you through to an engineer now."
