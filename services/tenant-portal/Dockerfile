@@ -14,7 +14,8 @@ ARG BASE=python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391b
 # ── deps: build the virtualenv once, copy it into a clean runtime ──────────────
 # checkov:skip=CKV_DOCKER_7:BASE is pinned by digest in the ARG above (checkov cannot resolve ARGs)
 FROM ${BASE} AS deps
-ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 RUN python -m venv /opt/venv
 # Development tools (tests, linters) are installed only when INSTALL_DEV=true, which
 # only a local docker compose build sets. Production images never contain them.
