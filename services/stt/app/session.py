@@ -11,18 +11,30 @@ way in the spikes:
   * State is reset at the utterance boundary, atomically with the decision.
   * Partials and finals are different message types. The orchestrator feeds only
     finals to the LLM; partials exist so the UI can feel responsive.
+  * The onset is kept. The VAD announces speech only after min_speech_ms of it,
+    and it scores audio in 256 ms blocks, so by the time an utterance "starts"
+    its first ~0.2-0.45 s has already gone by. Dropping that audio cut the first
+    word of every utterance ("where is my parcel" -> "my parcel", "zero one four
+    two" -> "four two"), which is fatal for IDs read aloud. The last PRE_ROLL of
+    idle audio is held and handed to Whisper ahead of the utterance.
 """
 
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
 import torch
 
 from .engine import SharedEngine
-from .vad import StreamingEndpointer
+from .vad import BLOCK_SAMPLES, SAMPLE_RATE, StreamingEndpointer
+
+# Idle audio held for the onset: the VAD's min_speech_ms, plus one scoring block
+# of detection latency, plus a margin for soft onsets the VAD scores below its
+# threshold. Leading silence costs Whisper nothing; a lost first word costs a turn.
+PRE_ROLL_MARGIN_MS = 250
 
 
 @dataclass
@@ -56,6 +68,23 @@ class CallSession:
         self.utterance_start_sample = 0
         self.infer_ms: list[float] = []
         self._expect_sample = 0
+        # Idle audio, newest last, trimmed to pre_roll_samples (see PRE_ROLL_MARGIN_MS).
+        self.pre_roll_samples = (min_speech_ms + PRE_ROLL_MARGIN_MS) * SAMPLE_RATE // 1000 \
+            + BLOCK_SAMPLES
+        self._idle: deque[np.ndarray] = deque()
+        self._idle_len = 0
+
+    def _hold_idle(self, audio: np.ndarray) -> None:
+        self._idle.append(audio)
+        self._idle_len += len(audio)
+        while self._idle and self._idle_len - len(self._idle[0]) >= self.pre_roll_samples:
+            self._idle_len -= len(self._idle.popleft())
+
+    def _take_pre_roll(self) -> np.ndarray:
+        audio = np.concatenate(self._idle) if self._idle else np.zeros(0, dtype=np.float32)
+        self._idle.clear()
+        self._idle_len = 0
+        return audio[-self.pre_roll_samples:]
 
     def note_gap(self, start_sample: int) -> int:
         """Detect loss/reordering rather than transcribing across a hole."""
@@ -70,16 +99,22 @@ class CallSession:
         events: list[Event] = []
 
         vad_events = self.endpointer.feed(audio)
+        started = False
         for ve in vad_events:
             if ve.kind == "speech_start":
+                started = True
                 self.utterance_start_sample = ve.at_sample
                 events.append(Event("speech_start", at_sample=ve.at_sample))
 
-        # Gate the GPU: only buffer and transcribe while an utterance is open.
-        # Outside one, the audio is dropped on the floor and costs nothing.
+        # Gate the GPU: only transcribe while an utterance is open. Outside one,
+        # audio is only held for the next onset (a fixed ~0.7 s) and costs no GPU.
         if self.endpointer.in_speech:
-            for chunk in self.segmenter.feed(audio):
+            # `audio` itself stays as received: samples_seen counts the wire.
+            heard = np.concatenate([self._take_pre_roll(), audio]) if started else audio
+            for chunk in self.segmenter.feed(heard):
                 events.append(await self._infer(chunk, is_last=False))
+        else:
+            self._hold_idle(audio)
 
         for ve in vad_events:
             if ve.kind == "speech_end":
