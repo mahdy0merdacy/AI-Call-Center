@@ -3,6 +3,7 @@
 import logging
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest
@@ -35,18 +36,26 @@ class RegistrationData:
 
 
 def create_tenant(name: str) -> Tenant:
-    """Create a tenant with a unique slug derived from its name."""
+    """Create a tenant with a unique slug derived from its name.
+
+    A reserved slug (settings.RESERVED_TENANT_SLUGS) is never assigned: the name
+    then starts from a suffixed slug, so "Acme" becomes "acme-x7k2p9".
+    """
+    # Normalised like generated slugs, so " Acme" in the environment still matches.
+    reserved = {slugify(entry) for entry in settings.RESERVED_TENANT_SLUGS}
     base = slugify(name)[:SLUG_MAX_BASE_LENGTH].strip("-") or "tenant"
     slug = base
     for _ in range(SLUG_MAX_ATTEMPTS):
-        try:
-            with transaction.atomic():
-                return Tenant.objects.create(name=name, slug=slug)
-        except IntegrityError:
-            suffix = get_random_string(
-                SLUG_SUFFIX_LENGTH, "abcdefghijklmnopqrstuvwxyz0123456789"
-            )
-            slug = f"{base}-{suffix}"
+        if slug not in reserved:
+            try:
+                with transaction.atomic():
+                    return Tenant.objects.create(name=name, slug=slug)
+            except IntegrityError:
+                pass  # taken: try a suffixed slug
+        suffix = get_random_string(
+            SLUG_SUFFIX_LENGTH, "abcdefghijklmnopqrstuvwxyz0123456789"
+        )
+        slug = f"{base}-{suffix}"
     raise RuntimeError("Could not generate a unique tenant slug.")
 
 

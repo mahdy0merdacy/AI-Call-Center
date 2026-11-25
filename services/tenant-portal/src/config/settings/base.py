@@ -114,6 +114,15 @@ NUM_PROXIES = env.int("NUM_PROXIES", default=0)
 
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 
+# --- Tenants ----------------------------------------------------------------
+
+# Slugs a new company never gets: the voice platform's test tenants (tenants/*.yaml)
+# own them, and the YAML tenant wins a slug collision there, so a client with the
+# same slug could never be called.
+RESERVED_TENANT_SLUGS = env.list(
+    "RESERVED_TENANT_SLUGS", default=["acme", "swiftnet", "maisonverte"]
+)
+
 # --- Authentication ---------------------------------------------------------
 
 AUTH_USER_MODEL = "accounts.User"
