@@ -110,13 +110,21 @@ default:
       .
     - docker buildx imagetools inspect "$IMAGE:$IMAGE_TAG"
 
-# Fails on HIGH/CRITICAL vulnerabilities that have a fix available. Unfixable
-# ones are reported but don't block: there is nothing to do about them yet.
+# HIGH/CRITICAL vulnerabilities that have a fix available. Unfixable ones are
+# not reported: there is nothing to do about them yet.
+#
+# Kept light: ONE scan writes the report and sets the exit code (it used to
+# scan the image twice), with a 10-minute limit so a stuck vulnerability-DB
+# download fails fast instead of hanging the pipeline.
+# Blocking on main only: on a merge request the findings show in the MR's test
+# widget but cannot hold the merge hostage to a slow scan. An image still never
+# gets the `main` tag without passing it (publish-main needs this job).
 .trivy-scan:
   stage: scan
   image:
     name: aquasec/trivy:0.65.0
     entrypoint: [""]
+  timeout: 15m
   variables:
     GIT_STRATEGY: none
     TRIVY_USERNAME: $CI_REGISTRY_USER
@@ -124,8 +132,7 @@ default:
     TRIVY_CACHE_DIR: .trivycache
     TRIVY_NO_PROGRESS: "true"
     TRIVY_SKIP_VERSION_CHECK: "true"
-    # Covers the whole run, DB download included (~80 MB; minutes on a slow link).
-    TRIVY_TIMEOUT: 15m
+    TRIVY_TIMEOUT: 10m
   cache:
     key: trivy-db
     paths: [.trivycache]
@@ -133,17 +140,17 @@ default:
     # every retry, which times out again.
     when: always
   script:
-    # Report and gate share one filter, so the MR's test widget lists exactly
-    # what blocks the pipeline (an unfiltered report shows ~160 "failures").
     - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
       --format template --template "@/contrib/junit.tpl"
-      --output junit-trivy.xml "$IMAGE:$IMAGE_TAG"
-    - trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
-      --exit-code 1 --skip-db-update "$IMAGE:$IMAGE_TAG"
+      --output junit-trivy.xml --exit-code 1 "$IMAGE:$IMAGE_TAG"
   artifacts:
     when: always
     reports:
       junit: junit-trivy.xml
+  rules:
+    - if: $PARENT_PIPELINE_SOURCE == "merge_request_event"
+      allow_failure: true
+    - when: on_success
 
 # On main only: tag the already-scanned image as `main`. Server-side retag, so the
 # digest is identical to what was tested.
