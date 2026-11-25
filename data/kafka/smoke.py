@@ -16,12 +16,12 @@ Every record value is:
 Producers in step 4 will use the library serializer, which does the same.
 """
 
+import json
 import os
 import secrets
 import struct
 import sys
 import time
-import json
 import urllib.request
 from pathlib import Path
 

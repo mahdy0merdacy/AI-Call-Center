@@ -1,0 +1,15 @@
+# Tooling config for the data platform (Spark jobs, simulator, quality runner,
+# schema tests). Not a package. Same rule set as the services; lines run longer
+# because Spark column expressions read worse when wrapped.
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["gen", "quality/gx"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts run from a checkout put the repo's libs on sys.path before importing them.
+"simulator/*.py" = ["E402"]
