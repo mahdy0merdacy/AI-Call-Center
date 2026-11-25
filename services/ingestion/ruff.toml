@@ -1,0 +1,14 @@
+# Same rules as services/documents (minus the Django ones).
+line-length = 100
+target-version = "py312"
+extend-exclude = ["venv"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "S", "RUF"]
+
+[lint.per-file-ignores]
+# Tests use bare assert and throwaway fake passwords.
+"tests/*" = ["S101", "S105", "S106"]
+
+[format]
+quote-style = "single"

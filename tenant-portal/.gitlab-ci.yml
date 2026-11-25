@@ -1,0 +1,45 @@
+# Child pipeline for the tenant portal (React + Vite). Triggered by the root
+# .gitlab-ci.yml when tenant-portal/ changes.
+#
+#   verify (typecheck) ► build (real + mock bundles)
+
+stages: [verify, build]
+
+variables:
+  NODE_IMAGE: node:22.12.0-bookworm-slim
+  SERVICE_DIR: tenant-portal
+  npm_config_cache: $CI_PROJECT_DIR/.cache/npm
+  npm_config_fund: "false"
+  npm_config_audit: "false"
+
+default:
+  interruptible: true          # a newer push to the same MR cancels this run
+
+.node:
+  image: $NODE_IMAGE
+  cache:
+    key:
+      prefix: npm-tenant-portal
+      files: [$SERVICE_DIR/package-lock.json]
+    paths: [.cache/npm]
+  before_script:
+    - cd "$SERVICE_DIR"
+    - npm ci
+
+typecheck:
+  extends: .node
+  stage: verify
+  script:
+    - npm run typecheck
+
+# The real bundle is what ships; the mock bundle proves the MSW demo still builds.
+build:
+  extends: .node
+  stage: build
+  script:
+    - npm run build
+    - npm run build:mock -- --outDir dist-mock
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - $SERVICE_DIR/dist/

@@ -1,0 +1,60 @@
+# Local/dev: the ingestion worker, attached to the two stacks it needs.
+# Start those first (each from its own folder):
+#   services/documents:      docker compose up -d      -> MongoDB + uploads volume
+#   services/tenant-portal:  docker compose up -d db   -> Postgres with document_chunks
+# Then, here (copy .env.example to .env first):
+#   docker compose up --build
+name: aicc-ingestion
+
+services:
+  worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Same least-privilege Mongo user as the documents app (readWrite on its DB only):
+      # the worker updates ingestion_status, nothing else.
+      MONGODB_URI: mongodb://${MONGO_APP_USER:-documents_app}:${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}@mongo:27017/${MONGODB_DB:-documents}?authSource=${MONGODB_DB:-documents}
+      MONGODB_DB: ${MONGODB_DB:-documents}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-tenant_portal}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_THREADS: ${EMBEDDING_THREADS:-2}
+      STUCK_AFTER_MINUTES: ${STUCK_AFTER_MINUTES:-10}
+      # Model download (first start only). The newer "Xet" downloader threw away a
+      # partly downloaded model when the connection dropped, then stalled. The classic
+      # download resumes from its .incomplete file after an interruption.
+      HF_HUB_DISABLE_XET: "1"
+      # Seconds to wait when a download stalls (default 10): slow connections.
+      HF_HUB_DOWNLOAD_TIMEOUT: "60"
+    # Ingestion must never slow down live calls (decision 11). These caps make sure
+    # the worker can't take all the machine's CPU or memory, whatever happens in
+    # the code. bge-m3 needs ~3 GB of RAM: if the worker is "Killed", raise
+    # WORKER_MEMORY (and Docker Desktop's own memory limit, Settings > Resources).
+    cpus: ${WORKER_CPUS:-2}
+    mem_limit: ${WORKER_MEMORY:-4g}
+    volumes:
+      # The documents service's uploads, read-only.
+      - media_data:/data/media:ro
+      # Downloaded embedding model (~2.3 GB): kept between restarts and rebuilds,
+      # so it is downloaded only once.
+      - hf_cache:/models
+    networks:
+      - documents   # reaches "mongo"
+      - portal      # reaches "db"
+
+# Created by the other two stacks; this one only joins them.
+networks:
+  documents:
+    external: true
+    name: aicc-documents_default
+  portal:
+    external: true
+    name: aicc-tenant-portal_default
+
+volumes:
+  media_data:
+    external: true
+    name: aicc-documents_media_data
+  # Owned by this stack (created on first `up`). Never delete it with `down -v`
+  # unless you want to download the model again.
+  hf_cache:

@@ -1,0 +1,13 @@
+.env
+.env.*
+keys/
+.git/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.venv/
+README.md
+**/.ruff_cache/
+**/.coverage
+reports/
+docs/

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-mock/
+*.local
+.cache/
+
+# The root .gitignore ignores `.env.*`. These two hold placeholders and mock
+# settings only, never secrets, so they are tracked. Real config goes in `.env`.
+!.env.example
+!.env.mock

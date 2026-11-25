@@ -1,0 +1,118 @@
+# Child pipeline for the tenant-portal (auth) service.
+# Started by the root .gitlab-ci.yml only when files under services/tenant-portal/
+# (or the root .gitlab-ci.yml) change. Every job works from $SERVICE_DIR.
+#
+# Stages:  lint (Maintainability) -> test (Functional suitability, Security)
+#          -> security (Security, SAST with Bandit)
+# Build / deploy (k3s) will be added later.
+#
+# Required CI/CD variable (Settings > CI/CD > Variables):
+#   TEST_DB_PASSWORD  - password of the throwaway Postgres used by the tests.
+#                       Masked, NOT protected, letters and digits only.
+
+# Only as a child of the root pipeline, never on its own.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+
+stages:
+  - lint # code quality check (maintainability)
+  - test
+  - security
+
+default:
+  image: python:3.12-slim
+  cache:
+    key:
+      files:
+        - services/tenant-portal/requirements.txt
+        - services/tenant-portal/requirements-dev.txt
+    paths:
+      - .cache/pip
+
+variables:
+  SERVICE_DIR: services/tenant-portal
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+# --- lint: code quality (ISO 25010 Maintainability) --------------------------
+ruff:
+  stage: lint
+  script:
+    - cd "$SERVICE_DIR"
+    # Same pinned version as requirements-dev.txt (single source of truth).
+    - pip install "$(grep '^ruff==' requirements-dev.txt)"
+    - mkdir -p reports
+    - cd src
+    - ruff check . --output-format=junit --output-file=../reports/ruff-junit.xml || true
+    - ruff check .
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - services/tenant-portal/reports/
+    reports:
+      junit: services/tenant-portal/reports/ruff-junit.xml
+
+# --- test: tests (a) unit, (b) API, (c) roles --------------------------------
+pytest:
+  stage: test
+  services:
+    # Same image as docker-compose.yml. Deleted at the end of the job.
+    - name: pgvector/pgvector:pg16
+      alias: db
+  variables:
+    POSTGRES_DB: tenant_portal
+    POSTGRES_USER: portal
+    POSTGRES_PASSWORD: $TEST_DB_PASSWORD
+    DATABASE_URL: "postgres://portal:${TEST_DB_PASSWORD}@db:5432/tenant_portal"
+  script:
+    - |
+      if [ -z "$TEST_DB_PASSWORD" ]; then
+        echo "ERROR: create the CI/CD variable TEST_DB_PASSWORD (masked, not protected)."
+        exit 1
+      fi
+    - cd "$SERVICE_DIR"
+    - pip install -r requirements-dev.txt
+    - mkdir -p reports
+    - cd src
+    - >
+      pytest -v
+      --junitxml=../reports/report.xml
+      --cov --cov-report=term --cov-report=xml:../reports/coverage.xml
+  # Reads "TOTAL ... 69%" from the job log and shows it in GitLab.
+  coverage: '/^TOTAL.+?(\d+(?:\.\d+)?%)$/'
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - services/tenant-portal/reports/
+    reports:
+      junit: services/tenant-portal/reports/report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: services/tenant-portal/reports/coverage.xml
+
+# --- security: test (d) SAST with Bandit -------------------------------------
+bandit:
+  stage: security
+  variables:
+    BANDIT_EXCLUDE: "./accounts/tests,./audit/tests,./accounts/migrations,./audit/migrations"
+  script:
+    - cd "$SERVICE_DIR"
+    - pip install "$(grep '^bandit==' requirements-dev.txt)"
+    - mkdir -p reports
+    - cd src
+    # Full report (all severities) kept as proof.
+    - bandit -r . -x "$BANDIT_EXCLUDE" -f json -o ../reports/bandit-report.json --exit-zero
+    # Medium/high findings as JUnit XML for the GitLab Tests tab.
+    - bandit -r . -x "$BANDIT_EXCLUDE" --severity-level medium -f xml -o ../reports/bandit-junit.xml --exit-zero
+    # Human-readable result in the job log. Fails the job on medium/high findings.
+    - bandit -r . -x "$BANDIT_EXCLUDE" --severity-level medium
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - services/tenant-portal/reports/
+    reports:
+      junit: services/tenant-portal/reports/bandit-junit.xml

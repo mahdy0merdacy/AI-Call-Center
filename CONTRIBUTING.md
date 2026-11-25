@@ -61,7 +61,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 | `chore` | Tooling, dependencies, housekeeping |
 | `ci` | Pipeline changes |
 
-The scope is the area you touched: `media-edge`, `orchestrator`, `stt`, `mcp-servers`, `data`, `proto`, `ci`.
+The scope is the area you touched: `media-edge`, `orchestrator`, `stt`, `mcp-servers`, `tenant-portal`, `data`, `proto`, `ci`.
 
 ```
 feat(stt): stream partial transcripts over gRPC
@@ -99,6 +99,7 @@ These are checked in CI. Run them locally first, ideally through the pre-commit 
 
 | Area | Tool | Command |
 |---|---|---|
+| Frontend types + build | tsc, vite | `cd tenant-portal && npm run build` |
 | Python lint | ruff | `ruff check .` |
 | Python format | ruff | `ruff format --check .` |
 | Types | mypy | `mypy <service>` |

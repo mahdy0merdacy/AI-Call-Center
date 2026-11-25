@@ -1,0 +1,59 @@
+# Local development stack. Values come from .env (see .env.example).
+#   docker compose up --build
+# The database image is already initialized (db/postgres/init.sql): on an empty
+# volume it creates every table and fills django_migrations, so the app starts
+# without running `manage.py migrate`.
+name: aicc-tenant-portal   # not "tenant-portal": keeps this stack apart from the old standalone project
+
+services:
+  db:
+    build: ./db/postgres
+    image: tenant-portal-db:local
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Over TCP: while init.sql runs, Postgres listens on its Unix socket only, so this
+      # stays unhealthy until the schema is loaded and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # 5433 is used by the data stack (data/docker-compose.yml).
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # Web UI
+
+  portal:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Schema comes from the initialized database image, not from migrate.
+      RUN_MIGRATIONS: "false"
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    ports:
+      - "127.0.0.1:${PORTAL_PORT:-8000}:8000"
+    volumes:
+      - ./src:/app
+      - ./keys:/keys:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  pgdata:

@@ -1,0 +1,7 @@
+[run]
+source = config, documents
+omit =
+    */migrations/*
+    documents/tests.py
+    config/asgi.py
+    config/wsgi.py
