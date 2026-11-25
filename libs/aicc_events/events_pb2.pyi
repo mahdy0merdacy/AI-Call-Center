@@ -21,6 +21,7 @@ class Service(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     SERVICE_STT: _ClassVar[Service]
     SERVICE_ORCHESTRATOR: _ClassVar[Service]
     SERVICE_MCP: _ClassVar[Service]
+    SERVICE_SENTIMENT: _ClassVar[Service]
 
 class EndReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -46,6 +47,7 @@ SERVICE_MEDIA_EDGE: Service
 SERVICE_STT: Service
 SERVICE_ORCHESTRATOR: Service
 SERVICE_MCP: Service
+SERVICE_SENTIMENT: Service
 END_REASON_UNSPECIFIED: EndReason
 END_REASON_CALLER_HUNG_UP: EndReason
 END_REASON_ESCALATED: EndReason
@@ -60,7 +62,7 @@ PII_FIELD_NUMBER: _ClassVar[int]
 pii: _descriptor.FieldDescriptor
 
 class Event(_message.Message):
-    __slots__ = ("event_id", "call_id", "tenant_id", "source", "seq", "occurred_at_ms", "call_started", "call_ended", "speech_started", "speech_ended", "partial_transcribed", "utterance_transcribed", "stt_session_summarized", "turn_decided", "slot_filled", "slot_rejected", "endpointing_changed", "tool_invoked", "llm_completed", "turn_completed", "barged_in", "escalated", "clause_synthesized", "first_audio_played", "error_raised")
+    __slots__ = ("event_id", "call_id", "tenant_id", "source", "seq", "occurred_at_ms", "call_started", "call_ended", "speech_started", "speech_ended", "partial_transcribed", "utterance_transcribed", "stt_session_summarized", "turn_decided", "slot_filled", "slot_rejected", "endpointing_changed", "tool_invoked", "llm_completed", "turn_completed", "barged_in", "escalated", "clause_synthesized", "first_audio_played", "emotion_classified", "call_emotion_summarized", "error_raised")
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
     CALL_ID_FIELD_NUMBER: _ClassVar[int]
     TENANT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -85,6 +87,8 @@ class Event(_message.Message):
     ESCALATED_FIELD_NUMBER: _ClassVar[int]
     CLAUSE_SYNTHESIZED_FIELD_NUMBER: _ClassVar[int]
     FIRST_AUDIO_PLAYED_FIELD_NUMBER: _ClassVar[int]
+    EMOTION_CLASSIFIED_FIELD_NUMBER: _ClassVar[int]
+    CALL_EMOTION_SUMMARIZED_FIELD_NUMBER: _ClassVar[int]
     ERROR_RAISED_FIELD_NUMBER: _ClassVar[int]
     event_id: str
     call_id: str
@@ -110,8 +114,10 @@ class Event(_message.Message):
     escalated: Escalated
     clause_synthesized: ClauseSynthesized
     first_audio_played: FirstAudioPlayed
+    emotion_classified: EmotionClassified
+    call_emotion_summarized: CallEmotionSummarized
     error_raised: ErrorRaised
-    def __init__(self, event_id: _Optional[str] = ..., call_id: _Optional[str] = ..., tenant_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ..., seq: _Optional[int] = ..., occurred_at_ms: _Optional[int] = ..., call_started: _Optional[_Union[CallStarted, _Mapping]] = ..., call_ended: _Optional[_Union[CallEnded, _Mapping]] = ..., speech_started: _Optional[_Union[SpeechStarted, _Mapping]] = ..., speech_ended: _Optional[_Union[SpeechEnded, _Mapping]] = ..., partial_transcribed: _Optional[_Union[PartialTranscribed, _Mapping]] = ..., utterance_transcribed: _Optional[_Union[UtteranceTranscribed, _Mapping]] = ..., stt_session_summarized: _Optional[_Union[SttSessionSummarized, _Mapping]] = ..., turn_decided: _Optional[_Union[TurnDecided, _Mapping]] = ..., slot_filled: _Optional[_Union[SlotFilled, _Mapping]] = ..., slot_rejected: _Optional[_Union[SlotRejected, _Mapping]] = ..., endpointing_changed: _Optional[_Union[EndpointingChanged, _Mapping]] = ..., tool_invoked: _Optional[_Union[ToolInvoked, _Mapping]] = ..., llm_completed: _Optional[_Union[LlmCompleted, _Mapping]] = ..., turn_completed: _Optional[_Union[TurnCompleted, _Mapping]] = ..., barged_in: _Optional[_Union[BargedIn, _Mapping]] = ..., escalated: _Optional[_Union[Escalated, _Mapping]] = ..., clause_synthesized: _Optional[_Union[ClauseSynthesized, _Mapping]] = ..., first_audio_played: _Optional[_Union[FirstAudioPlayed, _Mapping]] = ..., error_raised: _Optional[_Union[ErrorRaised, _Mapping]] = ...) -> None: ...
+    def __init__(self, event_id: _Optional[str] = ..., call_id: _Optional[str] = ..., tenant_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ..., seq: _Optional[int] = ..., occurred_at_ms: _Optional[int] = ..., call_started: _Optional[_Union[CallStarted, _Mapping]] = ..., call_ended: _Optional[_Union[CallEnded, _Mapping]] = ..., speech_started: _Optional[_Union[SpeechStarted, _Mapping]] = ..., speech_ended: _Optional[_Union[SpeechEnded, _Mapping]] = ..., partial_transcribed: _Optional[_Union[PartialTranscribed, _Mapping]] = ..., utterance_transcribed: _Optional[_Union[UtteranceTranscribed, _Mapping]] = ..., stt_session_summarized: _Optional[_Union[SttSessionSummarized, _Mapping]] = ..., turn_decided: _Optional[_Union[TurnDecided, _Mapping]] = ..., slot_filled: _Optional[_Union[SlotFilled, _Mapping]] = ..., slot_rejected: _Optional[_Union[SlotRejected, _Mapping]] = ..., endpointing_changed: _Optional[_Union[EndpointingChanged, _Mapping]] = ..., tool_invoked: _Optional[_Union[ToolInvoked, _Mapping]] = ..., llm_completed: _Optional[_Union[LlmCompleted, _Mapping]] = ..., turn_completed: _Optional[_Union[TurnCompleted, _Mapping]] = ..., barged_in: _Optional[_Union[BargedIn, _Mapping]] = ..., escalated: _Optional[_Union[Escalated, _Mapping]] = ..., clause_synthesized: _Optional[_Union[ClauseSynthesized, _Mapping]] = ..., first_audio_played: _Optional[_Union[FirstAudioPlayed, _Mapping]] = ..., emotion_classified: _Optional[_Union[EmotionClassified, _Mapping]] = ..., call_emotion_summarized: _Optional[_Union[CallEmotionSummarized, _Mapping]] = ..., error_raised: _Optional[_Union[ErrorRaised, _Mapping]] = ...) -> None: ...
 
 class Source(_message.Message):
     __slots__ = ("service", "instance", "build")
@@ -336,6 +342,42 @@ class FirstAudioPlayed(_message.Message):
     FINAL_TO_FIRST_AUDIO_MS_FIELD_NUMBER: _ClassVar[int]
     final_to_first_audio_ms: int
     def __init__(self, final_to_first_audio_ms: _Optional[int] = ...) -> None: ...
+
+class EmotionClassified(_message.Message):
+    __slots__ = ("utterance_index", "utterance_event_id", "emotion", "score", "slot_failures", "barge_in", "model")
+    UTTERANCE_INDEX_FIELD_NUMBER: _ClassVar[int]
+    UTTERANCE_EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    EMOTION_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    SLOT_FAILURES_FIELD_NUMBER: _ClassVar[int]
+    BARGE_IN_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FIELD_NUMBER: _ClassVar[int]
+    utterance_index: int
+    utterance_event_id: str
+    emotion: str
+    score: float
+    slot_failures: int
+    barge_in: bool
+    model: str
+    def __init__(self, utterance_index: _Optional[int] = ..., utterance_event_id: _Optional[str] = ..., emotion: _Optional[str] = ..., score: _Optional[float] = ..., slot_failures: _Optional[int] = ..., barge_in: _Optional[bool] = ..., model: _Optional[str] = ...) -> None: ...
+
+class CallEmotionSummarized(_message.Message):
+    __slots__ = ("utterances", "dominant", "first", "last", "trend", "escalation_risk", "model")
+    UTTERANCES_FIELD_NUMBER: _ClassVar[int]
+    DOMINANT_FIELD_NUMBER: _ClassVar[int]
+    FIRST_FIELD_NUMBER: _ClassVar[int]
+    LAST_FIELD_NUMBER: _ClassVar[int]
+    TREND_FIELD_NUMBER: _ClassVar[int]
+    ESCALATION_RISK_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FIELD_NUMBER: _ClassVar[int]
+    utterances: int
+    dominant: str
+    first: str
+    last: str
+    trend: str
+    escalation_risk: bool
+    model: str
+    def __init__(self, utterances: _Optional[int] = ..., dominant: _Optional[str] = ..., first: _Optional[str] = ..., last: _Optional[str] = ..., trend: _Optional[str] = ..., escalation_risk: _Optional[bool] = ..., model: _Optional[str] = ...) -> None: ...
 
 class ErrorRaised(_message.Message):
     __slots__ = ("component", "code", "detail")

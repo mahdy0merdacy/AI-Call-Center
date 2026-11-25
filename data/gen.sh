@@ -2,9 +2,10 @@
 # Regenerate code for the event schema. Run from anywhere.
 #   data/gen.sh
 #
-# Writes two copies of the same contract:
+# Writes the same contract to three places:
 #   data/gen/            canonical path + events.desc, for Spark and the data tools
 #   libs/aicc_events/    flat events_pb2.py, imported by the services' publishers
+#   services/sentiment/gen/  copy of data/gen/aicallcenter for the sentiment image
 # Both encode identical bytes; only the Python import path differs.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -25,4 +26,11 @@ rm -rf gen && mkdir -p gen
   --python_out=../libs/aicc_events --pyi_out=../libs/aicc_events \
   events.proto
 
-echo "generated into $(pwd)/gen and $(cd ../libs/aicc_events && pwd)"
+# services/sentiment builds its image from its own folder, so it keeps its own copy
+# of the canonical tree. Same files as gen/, synced here so it never drifts.
+rm -rf ../services/sentiment/gen/aicallcenter
+mkdir -p ../services/sentiment/gen
+cp -r gen/aicallcenter ../services/sentiment/gen/
+find ../services/sentiment/gen -name __pycache__ -prune -exec rm -rf {} +
+
+echo "generated into $(pwd)/gen, $(cd ../libs/aicc_events && pwd) and services/sentiment/gen"
