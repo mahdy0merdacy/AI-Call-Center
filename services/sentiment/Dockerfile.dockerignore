@@ -1,0 +1,8 @@
+# Only requirements.txt and app/ are copied; keep the huge folders out of the context.
+.venv
+models
+data
+scripts
+tests
+train.log
+**/__pycache__
