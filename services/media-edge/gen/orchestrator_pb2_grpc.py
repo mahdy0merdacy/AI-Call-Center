@@ -53,6 +53,11 @@ class OrchestratorStub:
                 request_serializer=orchestrator__pb2.CallEvent.SerializeToString,
                 response_deserializer=orchestrator__pb2.Directive.FromString,
                 _registered_method=True)
+        self.ListTenants = channel.unary_unary(
+                '/aicallcenter.orchestrator.v1.Orchestrator/ListTenants',
+                request_serializer=orchestrator__pb2.ListTenantsRequest.SerializeToString,
+                response_deserializer=orchestrator__pb2.ListTenantsResponse.FromString,
+                _registered_method=True)
 
 
 class OrchestratorServicer:
@@ -78,6 +83,16 @@ class OrchestratorServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListTenants(self, request, context):
+        """The tenants a call can be started for: the test tenants (tenants/*.yaml)
+        and every active client that signed up on the platform. Feeds the test
+        page's client picker. Like tenant_slug itself, this is a directory, not an
+        authorisation boundary: it lists public slugs and display names only.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_OrchestratorServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -85,6 +100,11 @@ def add_OrchestratorServicer_to_server(servicer, server):
                     servicer.Session,
                     request_deserializer=orchestrator__pb2.CallEvent.FromString,
                     response_serializer=orchestrator__pb2.Directive.SerializeToString,
+            ),
+            'ListTenants': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListTenants,
+                    request_deserializer=orchestrator__pb2.ListTenantsRequest.FromString,
+                    response_serializer=orchestrator__pb2.ListTenantsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -128,6 +148,33 @@ class Orchestrator:
             '/aicallcenter.orchestrator.v1.Orchestrator/Session',
             orchestrator__pb2.CallEvent.SerializeToString,
             orchestrator__pb2.Directive.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListTenants(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/aicallcenter.orchestrator.v1.Orchestrator/ListTenants',
+            orchestrator__pb2.ListTenantsRequest.SerializeToString,
+            orchestrator__pb2.ListTenantsResponse.FromString,
             options,
             channel_credentials,
             insecure,

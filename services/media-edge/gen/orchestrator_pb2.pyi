@@ -6,6 +6,30 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class ListTenantsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ListTenantsResponse(_message.Message):
+    __slots__ = ("tenants",)
+    TENANTS_FIELD_NUMBER: _ClassVar[int]
+    tenants: _containers.RepeatedCompositeFieldContainer[TenantSummary]
+    def __init__(self, tenants: _Optional[_Iterable[_Union[TenantSummary, _Mapping]]] = ...) -> None: ...
+
+class TenantSummary(_message.Message):
+    __slots__ = ("slug", "display_name", "locale", "source", "documents")
+    SLUG_FIELD_NUMBER: _ClassVar[int]
+    DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
+    LOCALE_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENTS_FIELD_NUMBER: _ClassVar[int]
+    slug: str
+    display_name: str
+    locale: str
+    source: str
+    documents: int
+    def __init__(self, slug: _Optional[str] = ..., display_name: _Optional[str] = ..., locale: _Optional[str] = ..., source: _Optional[str] = ..., documents: _Optional[int] = ...) -> None: ...
+
 class CallEvent(_message.Message):
     __slots__ = ("start", "transcript", "speech_started", "speech_ended", "end")
     START_FIELD_NUMBER: _ClassVar[int]

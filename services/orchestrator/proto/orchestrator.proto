@@ -18,6 +18,26 @@ package aicallcenter.orchestrator.v1;
 // per second on the data plane. Three orders of magnitude.
 service Orchestrator {
   rpc Session(stream CallEvent) returns (stream Directive);
+
+  // The tenants a call can be started for: the test tenants (tenants/*.yaml)
+  // and every active client that signed up on the platform. Feeds the test
+  // page's client picker. Like tenant_slug itself, this is a directory, not an
+  // authorisation boundary: it lists public slugs and display names only.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse {
+  repeated TenantSummary tenants = 1;
+}
+
+message TenantSummary {
+  string slug = 1;            // what /w/<slug> carries
+  string display_name = 2;
+  string locale = 3;
+  string source = 4;          // "test" (tenants/*.yaml) or "platform" (signed up in the portal)
+  uint32 documents = 5;       // documents ingested for retrieval; 0 for test tenants
 }
 
 // ── edge -> orchestrator ────────────────────────────────────────────────────
