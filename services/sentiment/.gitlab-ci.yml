@@ -1,0 +1,73 @@
+# Sentiment service child pipeline. Started by the root .gitlab-ci.yml when files under
+# services/sentiment/ or the shared CI templates change.
+#
+#   verify ─► test ─► build ─► scan ─► publish (default branch only)
+#
+# Jobs come from ci/templates/python-service.yml, shared with the orchestrator.
+# The tests use a fake model, so CI needs neither a GPU nor the trained weights.
+
+include:
+  - local: ci/templates/python-service.yml
+
+variables:
+  SERVICE: sentiment
+  SERVICE_DIR: services/sentiment
+  BUILD_CONTEXT: services/sentiment   # the Dockerfile copies paths relative to this folder
+
+stages: [verify, test, build, scan, publish]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+
+# ── verify ─────────────────────────────────────────────────────────────────────
+
+lint:
+  extends: .py-lint
+
+format:
+  extends: .py-format
+  # Code written before the formatter was enforced; warn until a one-off reformat.
+  allow_failure: true
+
+typecheck:
+  extends: .py-typecheck
+
+dockerfile:
+  extends: .hadolint
+
+# gen/ is a committed copy of data/gen (the event contract). If someone changes
+# events.proto and regenerates data/gen but forgets this copy, the worker would
+# silently decode with a stale schema.
+contract:
+  stage: verify
+  image: busybox:1.37.0
+  script:
+    - |
+      if ! diff -r data/gen/aicallcenter services/sentiment/gen/aicallcenter; then
+        echo "services/sentiment/gen is stale: cp -r data/gen/aicallcenter services/sentiment/gen/ and commit"
+        exit 1
+      fi
+
+# ── test ───────────────────────────────────────────────────────────────────────
+
+unit-tests:
+  extends: .py-test
+
+# ── build / scan / publish ─────────────────────────────────────────────────────
+
+build-image:
+  extends: .docker-build
+  needs: [lint, typecheck, dockerfile, contract, unit-tests]
+
+scan-image:
+  extends: .trivy-scan
+  needs: [build-image]
+
+sbom:
+  extends: .sbom
+  needs: [build-image]
+
+publish-main:
+  extends: .docker-promote-main
+  needs: [scan-image, sbom]

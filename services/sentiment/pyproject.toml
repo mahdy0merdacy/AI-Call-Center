@@ -1,0 +1,32 @@
+# Tooling config for the sentiment service. Not a package: the service runs as
+# `uvicorn app.service:app`, and the image installs requirements.txt.
+# Same rules as the orchestrator so CI treats both the same way.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["models", "data", ".venv", "gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Sentence templates and test fixtures are long on purpose.
+"scripts/*" = ["E501"]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+mypy_path = "gen"          # generated event classes (see gen/)
+exclude = ["^gen/"]
+
+[[tool.mypy.overrides]]
+module = ["aicallcenter.*"]   # generated code: not ours to fix
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "gen"]
+addopts = "-ra --strict-markers"

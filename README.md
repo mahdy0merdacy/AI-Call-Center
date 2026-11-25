@@ -142,6 +142,7 @@ purpose: delayed parcels, area outages, suspended accounts.
 | Airflow scheduling, Grafana | 🚧 In progress |
 | [Tenant portal](tenant-portal/README.md) authentication UI, against a mock backend | 🚧 In progress |
 | Services publishing call events to Kafka | 🚧 In progress |
+| [Sentiment service](services/sentiment/README.md): local emotion model, API and Kafka worker (trained on synthetic data only) | 🚧 In progress |
 | Streaming metrics with event-time windows, data-quality gates | 📋 Planned |
 | Transactional outbox, Postgres read replica, 3-broker Kafka | 📋 Planned |
 | Deployment on the k3s cluster | 📋 Planned |

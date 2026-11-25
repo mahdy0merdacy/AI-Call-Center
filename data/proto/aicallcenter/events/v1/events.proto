@@ -108,6 +108,11 @@ message Event {
     ClauseSynthesized clause_synthesized = 60;
     FirstAudioPlayed first_audio_played = 61;
 
+    // analysis (derived from the events above; emitted by the sentiment service
+    // to calls.sentiment.v1, never to calls.events.v1)
+    EmotionClassified emotion_classified = 70;
+    CallEmotionSummarized call_emotion_summarized = 71;
+
     // anything
     ErrorRaised error_raised = 90;
   }
@@ -125,6 +130,7 @@ enum Service {
   SERVICE_STT = 2;
   SERVICE_ORCHESTRATOR = 3;
   SERVICE_MCP = 4;
+  SERVICE_SENTIMENT = 5;
 }
 
 // ── call lifecycle ──────────────────────────────────────────────────────────
@@ -286,6 +292,41 @@ message ClauseSynthesized {
 // the whole latency budget in TECHNICAL-TIPS.md §8 is about.
 message FirstAudioPlayed {
   uint32 final_to_first_audio_ms = 1;
+}
+
+// ── analysis (sentiment service) ────────────────────────────────────────────
+
+// The caller's emotion on one utterance. No text is copied here on purpose:
+// the transcript stays in UtteranceTranscribed (PII_FREE_TEXT, redacted by the
+// bronze job), and this record joins to it on call_id + utterance_event_id.
+message EmotionClassified {
+  // 0-based count of the caller's utterances in this call, in the order the
+  // sentiment service read them. Not the orchestrator's turn_index (0 = greeting).
+  uint32 utterance_index = 1;
+  // event_id of the UtteranceTranscribed this was computed from.
+  string utterance_event_id = 2 [(pii) = PII_NONE];
+  // One of: neutral satisfied confused frustrated angry anxious sad
+  // (services/sentiment/app/emotions.py). A string, not an enum, so adding an
+  // emotion later is not a wire change; consumers must tolerate unknown values.
+  string emotion = 3 [(pii) = PII_NONE];
+  float score = 4;                                    // softmax probability, 0..1
+  // Signals the model was given, kept so a result can be reproduced.
+  uint32 slot_failures = 5;
+  bool barge_in = 6;
+  // Model version, e.g. "20261120-1703". Compare metrics only within one version.
+  string model = 7 [(pii) = PII_NONE];
+}
+
+// One per call, emitted when CallEnded arrives (or the call goes quiet).
+message CallEmotionSummarized {
+  uint32 utterances = 1;
+  string dominant = 2 [(pii) = PII_NONE];            // most frequent emotion
+  string first = 3 [(pii) = PII_NONE];
+  string last = 4 [(pii) = PII_NONE];
+  string trend = 5 [(pii) = PII_NONE];               // improving | stable | worsening
+  // Ended upset, or upset on 2+ utterances. See services/sentiment/app/summary.py.
+  bool escalation_risk = 6;
+  string model = 7 [(pii) = PII_NONE];
 }
 
 // ── errors ──────────────────────────────────────────────────────────────────
