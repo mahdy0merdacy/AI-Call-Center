@@ -39,9 +39,10 @@ class Agent:
     """One conversation for one tenant."""
 
     def __init__(self, api_key: str, model: str, tenant: Tenant,
-                 tools: ToolRegistry):
+                 tools: ToolRegistry, llm_url: str = GROQ_URL):
         self.api_key = api_key
         self.model = model
+        self.llm_url = llm_url      # any OpenAI-compatible chat completions endpoint
         self.tenant = tenant
         self.tools = tools
         self.history: list[dict] = []
@@ -81,7 +82,7 @@ class Agent:
                    "Content-Type": "application/json"}
         stats = self.llm_stats = {"ttft_ms": 0, "prompt_tokens": 0, "completion_tokens": 0}
         t0 = time.perf_counter()
-        async with session.post(GROQ_URL, json=payload, headers=headers,
+        async with session.post(self.llm_url, json=payload, headers=headers,
                                 timeout=aiohttp.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"LLM HTTP {resp.status}: {(await resp.text())[:160]}")

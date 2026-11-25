@@ -34,7 +34,7 @@ sys.path.insert(0, str(_HERE.parents[3] / "libs"))
 
 from aicc_events import CallEvents, EventPublisher, ev, new_ulid  # noqa: E402
 
-from app.agent import Agent  # noqa: E402
+from app.agent import GROQ_URL, Agent  # noqa: E402
 from app.flow import load_tenants  # noqa: E402
 from app.tools import ToolRegistry  # noqa: E402
 from gen import orchestrator_pb2 as pb  # noqa: E402
@@ -146,10 +146,11 @@ _TURN_KIND = {"say": ev.TURN_KIND_SAY, "ready_for_tool": ev.TURN_KIND_READY_FOR_
 
 class OrchestratorServicer(pb_grpc.OrchestratorServicer):
     def __init__(self, tenants, groq_key, model, mcp_endpoints,
-                 publisher: EventPublisher | None = None):
+                 publisher: EventPublisher | None = None, llm_url: str = GROQ_URL):
         self.tenants = tenants
         self.groq_key = groq_key
         self.model = model
+        self.llm_url = llm_url
         self.mcp_endpoints = mcp_endpoints
         self.publisher = publisher or EventPublisher(ev.SERVICE_ORCHESTRATOR)
         self.active: dict[str, Session] = {}
@@ -176,7 +177,8 @@ class OrchestratorServicer(pb_grpc.OrchestratorServicer):
                                  if t in self.mcp_endpoints},
                         allowed=set(tenant.tools),
                     )
-                    agent = Agent(self.groq_key, self.model, tenant, registry)
+                    agent = Agent(self.groq_key, self.model, tenant, registry,
+                                  llm_url=self.llm_url)
                     session = Session(tenant, agent, call_id,
                                       self.publisher.for_call(call_id, tenant.tenant_id))
                     self.active[call_id] = session
@@ -288,6 +290,7 @@ async def serve(args):
          "reschedule_delivery": args.mcp_acme,
          "check_line_status": args.mcp_swiftnet},
         publisher,
+        llm_url=args.llm_url,
     )
     server = grpc.aio.server(options=[
         ("grpc.keepalive_time_ms", 20000),
@@ -322,6 +325,9 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=50052)
     ap.add_argument("--llm-model", default="qwen/qwen3.8-27b")
+    # Any OpenAI-compatible chat completions endpoint. The call simulator points
+    # this at its fake LLM, so load tests are free, fast and repeatable.
+    ap.add_argument("--llm-url", default=os.environ.get("LLM_URL", GROQ_URL))
     ap.add_argument("--mcp-acme", default="http://127.0.0.1:9101/mcp")
     ap.add_argument("--mcp-swiftnet", default="http://127.0.0.1:9102/mcp")
     # GROQ_API_KEY comes from the environment (a Secret in k8s). The file is a
