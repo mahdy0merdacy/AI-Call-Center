@@ -256,7 +256,7 @@ services:
   # one container, LocalExecutor, metadata in Postgres. Fine for a laptop; on
   # k3s the official Helm chart splits these into separate pods.
   airflow:
-    build: ./airflow
+    build: {context: ., dockerfile: airflow/Dockerfile}
     image: aicc/airflow:3.2.0
     container_name: airflow
     hostname: airflow
@@ -280,11 +280,21 @@ services:
       KAFKA_BOOTSTRAP: kafka-1:19092
       PII_PEPPER: ${PII_PEPPER:-dev-pepper-change-me}
       PYTHONPATH: /opt/aicc
+      # Data quality (data/quality): reads the lake with delta-rs, straight from S3.
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lake}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lake-secret-key}
+      AICC_GEN: /opt/aicc/gen
+      TENANTS_DIR: /opt/aicc/tenants
+      QUALITY_HOME: /opt/airflow/quality     # GX project + Data Docs, on a volume
     volumes:
       - ./airflow/dags:/opt/airflow/dags:ro,z
       - ./spark/jobs:/opt/aicc/jobs:ro,z
       - ./gen:/opt/aicc/gen:ro,z
+      - ./quality:/opt/aicc/quality:ro,z
+      - ../tenants:/opt/aicc/tenants:ro,z
       - airflow-logs:/opt/airflow/logs
+      - quality-docs:/opt/airflow/quality
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v2/monitor/health > /dev/null"]
       interval: 15s
@@ -324,4 +334,5 @@ volumes:
   seaweedfs-data:
   spark-work:
   airflow-logs:
+  quality-docs:
   grafana-data:
