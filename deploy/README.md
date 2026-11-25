@@ -161,29 +161,32 @@ volumes then need those old passwords back, or `core-down.sh --volumes`.
 
 ## k3s mapping
 
-The images and the environment variables stay as they are. What changes is the objects around
-them.
+The images stay as they are, and so do most environment variables. What changes is the objects
+around them, plus a handful of values that name the environment (see "Per-environment values"
+below).
 
 | Compose | k3s |
 | --- | --- |
 | a service name (`portal`, `stt`...) | a Service of the same name in one namespace, so every URL in `compose.yaml` still resolves |
 | `portal`, `documents`, `web`, `knowledge`, `ingestion`, `mcp-*`, `orchestrator`, `stt`, `tts`, `edge` | Deployments (mailpit only in dev) |
 | `postgres`, `mongo` with the `pgdata` / `mongo-data` volumes | StatefulSets with a PVC each (`volumeClaimTemplates`, k3s's `local-path` class) |
-| `db-grants`, `mongo-setup` | Jobs run on every deploy (both are idempotent), with `grants.sql` and `mongo-setup.js` in ConfigMaps; plus a Job for the portal's `migrate` + `createcachetable`, with `RUN_MIGRATIONS=false` in its Deployment |
+| `db-grants`, `mongo-setup` | Jobs run on every deploy (both are idempotent), with `grants.sql` and `mongo-setup.js` in ConfigMaps; plus a Job for the portal's `migrate` + `createcachetable`, with `RUN_MIGRATIONS=false` in its Deployment. Both Jobs need `runAsUser: 999` / `runAsGroup: 999` (the postgres and mongodb users of those images): under `runAsNonRoot` a named user such as compose's `user: postgres` cannot be verified as non-root and the pod is refused |
 | `deploy/.env` | a Secret: `kubectl create secret generic aicc-core --from-env-file=deploy/.env` |
 | `deploy/keys/` mounted on the portal, with `group_add` | a Secret volume at `/keys`, `defaultMode: 0440` and `fsGroup: 10001` |
 | the root `.env` (`GROQ_API_KEY`) | a Secret for the orchestrator only |
 | `../tenants` mounted on the orchestrator | a ConfigMap at `/srv/aicc/tenants`. Keys cannot contain `/`, so `fixtures/knowledge/` (read by Maison Verte) is a second ConfigMap mounted at that subpath |
 | `gpus: all` on `stt` and `tts` | `runtimeClassName: nvidia` (k3s registers it when it finds the NVIDIA runtime), the NVIDIA device plugin with time-slicing so both share one GPU, `nvidia.com/gpu: 1` in limits, and a nodeSelector on the GPU nodes |
 | model caches bind-mounted from `~/.cache` | a hostPath or PVC per GPU node, filled by an init container (`nemo-speech pull`, the Whisper download); tts then runs as its own uid 10001 |
+| `~/.cache/huggingface` on `knowledge`, with `HF_HUB_OFFLINE=1` | a PVC (or hostPath plus a nodeSelector) at `/models/huggingface`, filled by an init container running `snapshot_download('BAAI/bge-m3', ...)` as uid 10001. Without it the model never loads and knowledge stays NotReady, since offline mode forbids the download |
 | `edge` on the bridge network, port 8082 | `hostNetwork: true` with `dnsPolicy: ClusterFirstWithHostNet`: WebRTC UDP gets the node's real addresses, and Service names still resolve. Browsers allow the mic only on HTTPS (or localhost), so TLS goes in front |
 | the `media` volume (documents writes, ingestion reads) | a ReadWriteOnce PVC: documents and ingestion pinned to the same node (affinity) until uploads move to object storage (SeaweedFS S3) |
 | `web`: nginx routing paths to portal and documents | Traefik (k3s's ingress) routing the same paths: `/api/auth/`, `/api/tenant/`, `/api/admin/`, `/api/schema/`, `/api/docs/`, `/_allauth/`, `/accounts/`, `/.well-known/`, `/health/` to portal:8000, `/api/documents/` and `/api/session-links/` to documents:8000, the rest to web:8080 |
 | `DNS_RESOLVER=127.0.0.11` (Docker's DNS) | if `web` keeps routing: the cluster DNS IP (`kubectl -n kube-system get svc kube-dns`, 10.43.0.10 by default) and fully qualified upstreams (`http://portal.<namespace>.svc.cluster.local:8000`), because nginx's `resolver` ignores the search domains in `resolv.conf` |
-| health checks | probes: gRPC probes for orchestrator and stt (native since k8s 1.24), `httpGet` for the HTTP ones, `tcpSocket` for the MCP servers; startup probes for stt, tts and knowledge, which take a minute |
+| health checks | probes, chosen per service, because a compose health check is a readiness check and must not become a liveness probe as is: <br>• knowledge: liveness `GET /livez`, readiness `GET /healthz` (503 while the model loads or Postgres is down; a liveness probe on it would restart a pod that is only waiting for Postgres) <br>• orchestrator: readiness = gRPC health (NOT_SERVING during a drain), liveness = `tcpSocket` 50052 <br>• stt: gRPC health, with a startup probe (warm-up takes a minute); tts: `GET /ready`, with a startup probe <br>• edge, web, portal, documents: `httpGet`; MCP servers: `tcpSocket`; ingestion: none (no port; a crash restarts it) |
 | — | Django probes need `httpHeaders: [{name: Host, value: localhost}]`: the kubelet sends the pod IP as Host, which `ALLOWED_HOSTS` rejects |
 | `mem_limit`, `cpus` | `resources.limits` (and `requests`) |
 | `stop_grace_period: 30s` | `terminationGracePeriodSeconds: 30` (orchestrator, stt, edge). The orchestrator's `SHUTDOWN_GRACE_S=25` stays below it |
+| one GPU node, the edge on host networking | `strategy: {type: Recreate}` (or `maxSurge: 0`) on edge, stt and tts: a rolling update's surge pod can never schedule next to the old one (the edge's host port 8082 is taken, and the GPU is already claimed), so the rollout would hang. Recreate means a short gap for new calls on that node |
 | `cap_drop: [ALL]`, `no-new-privileges` | `securityContext`: `runAsNonRoot`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` |
 | ports published on 127.0.0.1 | the Ingress (web), host networking (edge), `kubectl port-forward` for postgres and mailpit |
 | `aicc/*:dev` images | pushed to a registry with immutable tags (the git SHA), or `k3s ctr images import` for a single-node test |
@@ -191,3 +194,27 @@ them.
 One more thing to plan for: gRPC keeps one long-lived HTTP/2 connection per client, and a
 ClusterIP Service balances connections, not requests. With several STT pods, use a headless
 Service and client-side round-robin, or every call from one edge lands on the same GPU.
+
+### Per-environment values
+
+These are the only environment variables that change between this laptop and a cluster, so they
+belong in a per-environment ConfigMap, not in the images or `compose.yaml`:
+
+| Variable | Service | Here | On k3s |
+| --- | --- | --- | --- |
+| `ALLOWED_HOSTS` | portal | `localhost,127.0.0.1,portal,web` | plus the public hostname |
+| `DJANGO_ALLOWED_HOSTS` | documents | `documents,web,localhost,127.0.0.1` | plus the public hostname |
+| `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` | portal | `http://localhost:8080` | `https://<portal host>` (links in emails point here) |
+| `REFRESH_COOKIE_SECURE` | portal | `false` | `true` |
+| `DJANGO_SETTINGS_MODULE` | portal | `config.settings.dev` with `DEBUG=false` (plain HTTP) | `config.settings.prod` behind TLS: Secure cookies, HSTS, API docs off |
+| `SESSION_LINK_BASE_URL` | documents | `http://localhost:8082/s` | `https://<edge host>/s` |
+| `VOICE_TEST_URL` | web | `http://localhost:8082` | `https://<edge host>` |
+| `PORTAL_UPSTREAM`, `DOCUMENTS_UPSTREAM`, `DNS_RESOLVER` | web | bare names, `127.0.0.11` | only if `web` keeps routing: FQDNs and the cluster DNS IP (see above) |
+
+### Before it leaves localhost
+
+Today anyone who can reach the edge can list every platform client (`GET /tenants`) and call its
+agent: the slug selects a tenant, it does not authorise anything. On this laptop only you can
+reach it. Before the edge is reachable from a LAN or the internet, calls to platform clients
+should require a session-link token (`/s/<token>`, issued by the documents service, which
+nothing validates yet) or a portal login, and `/tenants` should list test tenants only.

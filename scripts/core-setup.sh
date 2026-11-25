@@ -146,6 +146,10 @@ put JWT_PUBLIC_KEY "${public//$'\n'/\\n}"
 [ ${#kept[@]} -eq 0 ] || echo "  kept ${#kept[@]} existing values (not shown)"
 echo "  JWT_PUBLIC_KEY matches $(show "$KEY_DIR")/jwt_public.pem"
 
+# The model caches are bind-mounted. If one is missing, dockerd would create it
+# as root, and every later download into it would fail: create them as you.
+mkdir -p "$HOME/.cache/whisper" "$HOME/.cache/nemo-speech/models" "$HOME/.cache/huggingface"
+
 [ "$CHECKS" = 1 ] || exit 0
 
 # ── prerequisites ──────────────────────────────────────────────────────────────
@@ -219,7 +223,8 @@ for model in nvidia/magpie_tts_multilingual_357m nvidia/nemo-nano-codec-22khz-1.
   fi
 done
 bge=$cache/huggingface/hub/models--BAAI--bge-m3
-snapshot=$(find "$bge/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)
+# `|| true`: under pipefail, find failing on a missing directory would end the script here.
+snapshot=$(find "$bge/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1 || true)
 if [ -n "$snapshot" ] && [ -s "$snapshot/modules.json" ] &&
   { [ -s "$snapshot/pytorch_model.bin" ] || [ -s "$snapshot/model.safetensors" ]; } &&
   [ -z "$(find "$bge/blobs" -name '*.incomplete' 2>/dev/null | head -1)" ]; then

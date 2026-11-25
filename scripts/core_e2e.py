@@ -14,8 +14,8 @@ containers really talk to each other:
   5. wait for ingestion       ingestion -> mongo, media volume, knowledge (embeds), postgres
   6. client is listed         edge /tenants -> orchestrator -> postgres (voice_reader)
   7. call the new client      edge container -> orchestrator -> knowledge -> postgres, LLM
-  8. isolation                another client's call and a search under another tenant id
-                              must not see the document
+  8. isolation                a second client (no documents) asked the same question, and
+                              a search under its id, must not see client A's document
 
 Step 7 runs inside the edge container, on the compose network, speaking the same
 gRPC stream the media edge uses; only the audio legs (STT/TTS) are skipped, which
@@ -200,6 +200,50 @@ def call(slug: str, question: str) -> dict:
         return {"error": p.stdout[-400:]}
 
 
+def onboard(s: Step, args, company: str, email: str, password: str, tag: str = ""):
+    """Sign up, verify through Mailpit, log in. (token, slug, tenant_id) or None."""
+    api = f"{args.web}/api"
+    st, body = http("POST", f"{api}/auth/register/", {
+        "company_name": company, "email": email, "password": password,
+        "first_name": "Ada", "last_name": "Pistachio"})
+    if not s.record(f"{tag}sign up", st == 201, f"HTTP {st}"):
+        print(body)
+        return None
+
+    link = None
+    for _ in range(30):
+        st, msgs = http("GET", f"{args.mailpit}/api/v1/messages?limit=50")
+        for m in (msgs.get("messages") if isinstance(msgs, dict) else None) or []:
+            if any(t.get("Address") == email for t in m.get("To") or []):
+                _, full = http("GET", f"{args.mailpit}/api/v1/message/{m['ID']}")
+                text = (full.get("Text") or "") + (full.get("HTML") or "")
+                link = re.search(r"verify-email\?uid=([^&\s\"'<]+)&(?:amp;)?token=([^\s\"'<&]+)",
+                                 text)
+                break
+        if link:
+            break
+        time.sleep(1)
+    if not s.record(f"{tag}verification email received", bool(link)):
+        return None
+    st, body = http("POST", f"{api}/auth/verify-email/",
+                    {"uid": link.group(1), "token": link.group(2)})
+    if not s.record(f"{tag}email verified", st in (200, 204), f"HTTP {st}"):
+        print(body)
+        return None
+
+    st, body = http("POST", f"{api}/auth/login/", {"email": email, "password": password})
+    token = body.get("access_token") if isinstance(body, dict) else None
+    if not s.record(f"{tag}log in (JWT issued)", st == 200 and bool(token), f"HTTP {st}"):
+        print(body)
+        return None
+    st, tenant = http("GET", f"{api}/tenant/me/", headers={"Authorization": f"Bearer {token}"})
+    slug = tenant.get("slug") if isinstance(tenant, dict) else None
+    tenant_id = tenant.get("id") if isinstance(tenant, dict) else None
+    if not s.record(f"{tag}tenant created", st == 200 and bool(slug), f"slug {slug}"):
+        return None
+    return token, slug, tenant_id
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--web", default="http://localhost:8080")
@@ -218,48 +262,12 @@ def main() -> int:
 
     print(f"core e2e — company {company!r}, {email}")
 
-    # 1. sign up
-    st, body = http("POST", f"{api}/auth/register/", {
-        "company_name": company, "email": email, "password": password,
-        "first_name": "Ada", "last_name": "Pistachio"})
-    if not s.record("sign up", st == 201, f"HTTP {st}"):
-        print(body)
+    # 1-3. sign up, verify the email, log in
+    got = onboard(s, args, company, email, password)
+    if got is None:
         return 1
-
-    # 2. verify via the link in the email
-    link = None
-    for _ in range(30):
-        st, msgs = http("GET", f"{args.mailpit}/api/v1/messages?limit=50")
-        for m in (msgs.get("messages") if isinstance(msgs, dict) else None) or []:
-            if any(t.get("Address") == email for t in m.get("To") or []):
-                _, full = http("GET", f"{args.mailpit}/api/v1/message/{m['ID']}")
-                text = (full.get("Text") or "") + (full.get("HTML") or "")
-                link = re.search(r"verify-email\?uid=([^&\s\"'<]+)&(?:amp;)?token=([^\s\"'<&]+)",
-                                 text)
-                break
-        if link:
-            break
-        time.sleep(1)
-    if not s.record("verification email received", bool(link)):
-        return 1
-    st, body = http("POST", f"{api}/auth/verify-email/",
-                    {"uid": link.group(1), "token": link.group(2)})
-    if not s.record("email verified", st in (200, 204), f"HTTP {st}"):
-        print(body)
-        return 1
-
-    # 3. log in
-    st, body = http("POST", f"{api}/auth/login/", {"email": email, "password": password})
-    token = body.get("access_token") if isinstance(body, dict) else None
-    if not s.record("log in (JWT issued)", st == 200 and bool(token), f"HTTP {st}"):
-        print(body)
-        return 1
+    token, slug, tenant_id = got
     auth = {"Authorization": f"Bearer {token}"}
-    st, tenant = http("GET", f"{api}/tenant/me/", headers=auth)
-    slug = tenant.get("slug") if isinstance(tenant, dict) else None
-    tenant_id = tenant.get("id") if isinstance(tenant, dict) else None
-    if not s.record("tenant created", st == 200 and bool(slug), f"slug {slug}"):
-        return 1
 
     # 4. upload
     payload, ctype = multipart("file", "pistachio-handbook.txt", FACTS.encode(), "text/plain")
@@ -298,19 +306,25 @@ def main() -> int:
     s.record("call: answer comes from the uploaded document", bool(EXPECT.search(answer)),
              answer[:200] or res.get("error", ""))
 
-    # 8. isolation
-    other = call("acme", QUESTION)
-    other_answer = " ".join(other.get("answer") or [])
-    s.record("isolation: another client's call does not see it",
-             not EXPECT.search(other_answer) and "Mirabelle" not in other_answer,
-             other_answer[:160] or other.get("error", ""))
-    p = compose_python("orchestrator", SEARCH_SNIPPET, str(uuid.uuid4()), QUESTION, timeout=30)
+    # 8. isolation: a second client, with no documents, asked the same question
+    other_slug, other_id = None, None
+    got = onboard(s, args, f"Quiet Company {run}", f"owner-{run}@quiet.test", password, "client B: ")
+    if got:
+        _, other_slug, other_id = got
+        other = call(other_slug, QUESTION)
+        other_answer = " ".join(other.get("answer") or [])
+        s.record("isolation: client B's call does not see client A's document",
+                 bool(other_answer) and not other.get("error")
+                 and not EXPECT.search(other_answer) and "Mirabelle" not in other_answer,
+                 other_answer[:160] or other.get("error", ""))
+    p = compose_python("orchestrator", SEARCH_SNIPPET, other_id or str(uuid.uuid4()), QUESTION,
+                       timeout=30)
     try:
         chunks = json.loads(p.stdout)["chunks"]
-        s.record("isolation: search under another tenant id returns nothing", chunks == [],
+        s.record("isolation: search under client B's id returns nothing", chunks == [],
                  f"{len(chunks)} chunk(s)")
     except (json.JSONDecodeError, KeyError):
-        s.record("isolation: search under another tenant id returns nothing", False,
+        s.record("isolation: search under client B's id returns nothing", False,
                  (p.stderr or p.stdout)[-200:])
     if tenant_id:
         p = compose_python("orchestrator", SEARCH_SNIPPET, tenant_id, QUESTION, timeout=30)
