@@ -109,6 +109,9 @@ one laptop without a GPU, and a desktop with an RTX 5070.
 - **Quorums.** The Kubernetes datastore and Kafka's controllers each run on three laptops, so
   either keeps working with one machine missing.
 
+Until then, the same images run as one Compose stack on a single machine; see
+[deploy/README.md](deploy/README.md), including how each piece maps to k3s.
+
 <!-- DIAGRAM: Kubernetes node layout goes here. -->
 
 ---
@@ -172,6 +175,9 @@ model does not stream, which is why replies are synthesised clause by clause.
 ---
 
 ## Getting started
+
+Everything except the data platform also runs as containers: `scripts/core-up.sh`, then
+`scripts/core-check.sh`. See [deploy/README.md](deploy/README.md).
 
 ### Requirements
 
