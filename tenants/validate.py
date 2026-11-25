@@ -83,7 +83,11 @@ def check(path: Path) -> dict | None:
         for slot in f.get("slots") or []:
             sn = slot.get("name", "?")
             pat = slot.get("pattern")
-            if not pat:
+            if slot.get("type") == "date":
+                # Enforced by the date parser (app/dates.py), not a pattern.
+                if pat:
+                    err(tid, f"slot {intent}.{sn} is a date slot; its pattern would be ignored")
+            elif not pat:
                 err(tid, f"slot {intent}.{sn} has no pattern — nothing to enforce")
             else:
                 try:

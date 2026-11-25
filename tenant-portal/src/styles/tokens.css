@@ -1,0 +1,73 @@
+/*
+ * Design tokens. Every colour is an HSL triplet so Tailwind can apply alpha
+ * (`bg-primary/10`). Contrast pairs were chosen to meet WCAG AA (4.5:1) for
+ * body text in both themes.
+ */
+:root {
+  /* Brand palette (theme independent) */
+  --brand-navy: 228 55% 9%;
+  --brand-navy-2: 232 47% 16%;
+  --brand-indigo: 243 75% 59%;
+  --brand-violet: 262 83% 66%;
+  --brand-teal: 173 72% 46%;
+
+  /* Semantic — light */
+  --background: 225 33% 98%;
+  --foreground: 226 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 226 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 226 47% 11%;
+  --primary: 245 72% 56%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 225 27% 94%;
+  --secondary-foreground: 226 40% 18%;
+  --muted: 225 27% 95%;
+  --muted-foreground: 222 13% 40%;
+  --accent: 248 85% 96%;
+  --accent-foreground: 248 60% 36%;
+  --destructive: 0 72% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 172 72% 27%;
+  --success-foreground: 0 0% 100%;
+  --warning: 30 92% 36%;
+  --warning-foreground: 0 0% 100%;
+  --info: 212 80% 42%;
+  --info-foreground: 0 0% 100%;
+  --border: 225 22% 89%;
+  --input: 225 20% 84%;
+  --ring: 245 72% 56%;
+  --shadow-color: 228 45% 20%;
+  --radius: 0.75rem;
+
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  --background: 229 47% 6%;
+  --foreground: 225 33% 95%;
+  --card: 229 41% 9%;
+  --card-foreground: 225 33% 95%;
+  --popover: 229 41% 10%;
+  --popover-foreground: 225 33% 95%;
+  --primary: 245 80% 63%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 229 30% 15%;
+  --secondary-foreground: 225 33% 92%;
+  --muted: 229 30% 13%;
+  --muted-foreground: 225 16% 68%;
+  --accent: 246 40% 18%;
+  --accent-foreground: 246 90% 86%;
+  --destructive: 0 75% 62%;
+  --destructive-foreground: 229 47% 6%;
+  --success: 170 65% 48%;
+  --success-foreground: 229 47% 6%;
+  --warning: 36 92% 58%;
+  --warning-foreground: 229 47% 6%;
+  --info: 208 90% 64%;
+  --info-foreground: 229 47% 6%;
+  --border: 229 26% 18%;
+  --input: 229 24% 22%;
+  --ring: 245 85% 70%;
+  --shadow-color: 230 60% 2%;
+}

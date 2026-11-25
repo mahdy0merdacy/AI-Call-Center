@@ -36,8 +36,20 @@ flows:
           silence_ms: 1400
     tool: lookup_shipment
   - intent: reschedule_delivery
-    utterances: ["reschedule my delivery"]
+    utterances: ["reschedule my delivery", "postpone"]
     requires_flow: track_shipment
+    slots:
+      - name: shipment_id
+        type: alphanumeric
+        pattern: '^[A-Za-z0-9]{10}$'
+        prompt: "Can I take your shipment ID?"
+        max_attempts: 3
+      - name: new_date
+        type: date
+        relative_to: estimated_delivery
+        prompt: "What date would you like instead?"
+        on_invalid: "Sorry, which date?"
+        max_attempts: 3
     tool: reschedule_delivery
   - intent: secret_step
     internal: true

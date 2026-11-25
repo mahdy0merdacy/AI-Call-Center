@@ -33,10 +33,10 @@ event time.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
-from pyspark.sql import Column, DataFrame, SparkSession, functions as F
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.protobuf.functions import from_protobuf
 
 HERE = Path(__file__).resolve().parent
@@ -155,7 +155,13 @@ def decoded(spark: SparkSession, topic: str = TOPIC) -> DataFrame:
         F.conv(F.hex(F.expr("substring(value, 2, 4)")), 16, 10).cast("int").alias("schema_id"),
         F.when(framed, from_protobuf(
             body, MESSAGE, binaryDescriptorSet=desc,
-            options={"mode": "PERMISSIVE", "upcast.unsigned.ints": "true"})).alias("e"),
+            options={"mode": "PERMISSIVE", "upcast.unsigned.ints": "true",
+                     # proto3 does not put zero values on the wire. Without this,
+                     # every 0 and false decodes as NULL: the greeting's
+                     # turn_index 0 became NULL and broke the silver MERGE key.
+                     # `optional` fields (route_score) still decode NULL when
+                     # unset, and a oneof still has exactly one member set.
+                     "emit.default.values": "true"})).alias("e"),
     )
 
 

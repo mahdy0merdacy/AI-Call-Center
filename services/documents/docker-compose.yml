@@ -1,0 +1,87 @@
+# Local/dev stack: MongoDB + this service. Copy .env.example to .env first.
+#   docker compose up --build
+# The database image is already initialized (db/mongo/init.js): on an empty volume it
+# creates the collections, their indexes and the django_migrations record, so the app
+# starts without running `manage.py migrate`.
+name: aicc-documents
+
+services:
+  mongo:
+    build: ./db/mongo
+    image: documents-db:local
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?set MONGO_USER in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
+      MONGODB_DB: ${MONGODB_DB:-documents}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # Through the container's hostname, not localhost: stays unhealthy while init.js
+      # runs (MongoDB then listens on localhost only), so mongo-setup never connects
+      # during the restart that follows the init.
+      test: ["CMD-SHELL", "mongosh --quiet --host \"$$(hostname)\" --eval \"db.adminCommand('ping').ok\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No published port: only the app talks to the database.
+
+  # One-shot job: create (or refresh) the app's own database user with the root
+  # credentials. The app then connects as that user, which can only read and write its
+  # own database. Idempotent, so it also works on a volume that already has data.
+  mongo-setup:
+    image: mongo:7
+    command:
+      - mongosh
+      - --host=mongo
+      - --quiet
+      - --username=${MONGO_USER}
+      - --password=${MONGO_PASSWORD}
+      - --authenticationDatabase=admin
+      - /setup/mongo-setup.js
+    environment:
+      APP_DB: ${MONGODB_DB:-documents}
+      APP_USER: ${MONGO_APP_USER:-documents_app}
+      APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
+    volumes:
+      - ./docker/mongo-setup.js:/setup/mongo-setup.js:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      # The app's own least-privilege user (readWrite on its database only), not root.
+      MONGODB_URI: mongodb://${MONGO_APP_USER:-documents_app}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGODB_DB:-documents}?authSource=${MONGODB_DB:-documents}
+      MONGODB_DB: ${MONGODB_DB:-documents}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-25}
+      SESSION_LINK_BASE_URL: ${SESSION_LINK_BASE_URL:-http://localhost:3000/s}
+      # Public half of the auth service's RS256 key (PEM on one line, newlines as \n).
+      # Without it every request is refused with 401.
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      JWT_TENANT_CLAIM: ${JWT_TENANT_CLAIM:-tenant_id}
+      JWT_ISSUER: ${JWT_ISSUER:-}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-}
+      # Only these token roles may use the service (others get 403); empty = any role.
+      JWT_ALLOWED_ROLES: ${JWT_ALLOWED_ROLES-tenant_admin}
+      # Browser origins allowed to call the API, comma-separated (e.g. http://localhost:3000).
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    # 8000 is the tenant-portal's port.
+    ports:
+      - "${APP_PORT:-8001}:8000"
+    volumes:
+      # Uploaded files live on local disk (spec NFR-01 gap, see Dockerfile).
+      - media_data:/data/media
+    depends_on:
+      mongo-setup:
+        condition: service_completed_successfully
+
+volumes:
+  mongo_data:
+  media_data:

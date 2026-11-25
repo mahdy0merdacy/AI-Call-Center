@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.flow import CallFlowState, Slot, normalise_spoken, route
+from app.flow import CallFlowState, Slot, normalise_spoken, route, route_by_slot
 
 # ── spoken-form normalisation ────────────────────────────────────────────────
 
@@ -76,6 +76,21 @@ def test_route_never_picks_internal_flow(tenant):
     assert route(tenant, "where is my parcel").intent != "secret_step"
 
 
+def test_route_by_slot_catches_a_bare_id(tenant):
+    # From a live call: the opener was misheard, then the caller just gave the ID.
+    assert route(tenant, "is AC4571X209.") is None
+    assert route_by_slot(tenant, "is AC4571X209.").intent == "track_shipment"
+
+
+def test_route_by_slot_ignores_ordinary_speech(tenant):
+    assert route_by_slot(tenant, "may locate the parcel") is None
+
+
+def test_route_by_slot_skips_flows_that_need_a_prerequisite(tenant):
+    flow = route_by_slot(tenant, "AC4471X209")
+    assert flow.intent == "track_shipment" and flow.requires_flow is None
+
+
 # ── slot-filling state machine ───────────────────────────────────────────────
 
 
@@ -97,6 +112,15 @@ def test_valid_value_makes_flow_ready_for_tool(tenant):
     action = state.advance("AC4471X209")
     assert action.kind == "ready_for_tool"
     assert state.filled == {"shipment_id": "AC4471X209"}
+
+
+def test_begin_takes_a_value_given_in_the_opening_utterance(tenant):
+    state = CallFlowState(tenant)
+    flow = next(f for f in tenant.flows if f.intent == "track_shipment")
+    action = state.begin(flow, "where is my parcel, it's AC4471X209")
+    assert action.kind == "ready_for_tool"
+    assert state.filled == {"shipment_id": "AC4471X209"}
+    assert state.attempts == {}        # nothing was rejected on the way
 
 
 def test_invalid_value_is_reprompted(tenant):

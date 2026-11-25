@@ -61,7 +61,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 | `chore` | Tooling, dependencies, housekeeping |
 | `ci` | Pipeline changes |
 
-The scope is the area you touched: `media-edge`, `orchestrator`, `stt`, `mcp-servers`, `data`, `proto`, `ci`.
+The scope is the area you touched: `media-edge`, `orchestrator`, `stt`, `mcp-servers`, `tenant-portal`, `data`, `proto`, `ci`.
 
 ```
 feat(stt): stream partial transcripts over gRPC
@@ -99,6 +99,7 @@ These are checked in CI. Run them locally first, ideally through the pre-commit 
 
 | Area | Tool | Command |
 |---|---|---|
+| Frontend types + build | tsc, vite | `cd tenant-portal && npm run build` |
 | Python lint | ruff | `ruff check .` |
 | Python format | ruff | `ruff format --check .` |
 | Types | mypy | `mypy <service>` |
@@ -121,6 +122,51 @@ pre-commit install
 - **Dependencies:** pin versions in each service's `requirements.txt`. Mention new dependencies in the MR description.
 - **Config:** read config from environment variables, never hard-code hosts, ports or credentials.
 - **Docs:** if you change how something is run, update `RUNNING.md` or the service README in the same MR.
+
+## Changing the event schema
+
+`data/proto/aicallcenter/events/v1/events.proto` is not like the gRPC contracts in `services/*/proto`. Its records stay in Kafka and the Delta lake for months, and code we haven't written yet will read them. A bad change can't be fixed by redeploying: the broken records are already stored. The rules are in the header of the `.proto`. In short: **never change or reuse a field number, never rename a field, and new fields must be fine to be absent.**
+
+In one MR:
+
+1. **Edit the `.proto`.** New field = next free number. Every `string` field needs a `(pii)` class (`PII_NONE`, `PII_IDENTIFIER`, `PII_FREE_TEXT`, `PII_PERSONAL`). Deleting a field means `reserved <number>; reserved "<name>";`.
+2. **Regenerate and commit the output:**
+   ```bash
+   data/gen.sh                                 # writes data/gen/ and libs/aicc_events/events_pb2.*
+   .venv/bin/python data/tests/test_events.py  # compatibility + PII checks
+   ```
+3. **Update the readers the change affects:**
+   - a new event type or payload: `data/spark/jobs/silver_calls.py` and `data/quality/suites.py`;
+   - a field silver should keep: the silver job.
+
+   Bronze decodes with the descriptor, so it needs no change.
+4. **Check against the live registry** (stack running):
+   ```bash
+   .venv/bin/python data/kafka/register_schemas.py --check
+   ```
+
+After merge, **register the schema before deploying any producer that writes the new field**:
+```bash
+.venv/bin/python data/kafka/register_schemas.py
+```
+The registry uses `FULL_TRANSITIVE` compatibility: the new schema must stay compatible with every version registered before it. Order matters because the publisher tags each record with the *latest registered* schema id. If you deploy first, records carrying the new field are tagged with the old id, and any reader that decodes by that id silently loses the field.
+
+CI runs on every MR that touches `data/`, `libs/aicc_events/` or `tenants/`:
+
+| Job | What it catches |
+|---|---|
+| `schema-lint` | `buf lint` style rules |
+| `schema-breaking` | a renumbered, retyped or deleted-without-`reserved` field, compared with the target branch |
+| `schema-generated` | a `.proto` edited without running `data/gen.sh` |
+| `schema-tests` | broken forward/backward compatibility; a string field without a PII class |
+| `quality-tests` | a data-quality rule that no longer catches its fault |
+| `lint` | ruff on all of `data/` |
+
+To run the quality tests locally (they use their own virtualenv, because Great Expectations conflicts with the main `.venv`):
+```bash
+python3.12 -m venv .venv-quality && .venv-quality/bin/pip install -r data/quality/requirements.txt pytest
+.venv-quality/bin/python -m pytest data/quality/tests -q
+```
 
 ## Tracking work
 

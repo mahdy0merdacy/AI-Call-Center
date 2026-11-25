@@ -1,0 +1,18 @@
+# Runtime dependencies (pinned). Dev/test extras live in requirements-dev.txt.
+Django==5.2.17
+djangorestframework==3.18.1
+# [crypto] pulls in `cryptography`, required by PyJWT for RS256.
+djangorestframework-simplejwt[crypto]==5.5.1
+argon2-cffi==25.1.0
+django-allauth[socialaccount]==65.19.5
+django-otp==1.7.3
+# [pil] pulls in Pillow, required to render the QR code as PNG.
+qrcode[pil]==8.2
+django-axes==8.3.1
+django-cors-headers==4.9.0
+django-csp==4.0
+django-environ==0.14.0
+drf-spectacular==0.30.0
+# PostgreSQL driver and production WSGI server.
+psycopg[binary]==3.3.6
+gunicorn==26.2.0

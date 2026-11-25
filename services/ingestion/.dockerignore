@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+.pytest_cache/
+.ruff_cache/
+# Not needed at runtime
+tests/
+ruff.toml
+requirements-dev.txt
+docker-compose.yml
+README.md
+scripts/

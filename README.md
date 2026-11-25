@@ -140,6 +140,7 @@ purpose: delayed parcels, area outages, suspended accounts.
 | Event schema, Schema Registry with compatibility enforcement | ✅ Working |
 | Kafka, Postgres, Debezium CDC, Spark bronze ingestion into Delta Lake | ✅ Working locally |
 | Airflow scheduling, Grafana | 🚧 In progress |
+| [Tenant portal](tenant-portal/README.md) authentication UI, against a mock backend | 🚧 In progress |
 | Services publishing call events to Kafka | 🚧 In progress |
 | [Sentiment service](services/sentiment/README.md): local emotion model, API and Kafka worker (trained on synthetic data only) | 🚧 In progress |
 | Streaming metrics with event-time windows, data-quality gates | 📋 Planned |
@@ -152,6 +153,7 @@ purpose: delayed parcels, area outages, suspended accounts.
 
 ```
 services/          Voice plane: media-edge, stt, orchestrator, mcp-servers
+tenant-portal/     Web portal for tenant admins (React): sign-up, login, MFA, profile
 tenants/           Tenant configs (YAML), fixtures and knowledge documents
 data/              Data platform: event schema, Docker Compose stack, Kafka, Postgres,
                    Debezium, Spark jobs, Airflow DAGs, Grafana

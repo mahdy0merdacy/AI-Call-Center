@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+.env
+media/
+.git/
+.vscode/
+db.sqlite3
+# Not needed at runtime (requirements-dev.txt is NOT listed: the standard Dockerfile
+# copies it and installs it only when INSTALL_DEV=true)
+documents/tests.py
+.coveragerc
+ruff.toml
+.gitlab-ci.yml

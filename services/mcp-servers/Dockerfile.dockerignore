@@ -1,0 +1,8 @@
+# Used instead of a root .dockerignore when building with this Dockerfile.
+# Allowlist: the build context is the whole repo, so send only what the image needs.
+*
+!services/mcp-servers/requirements.txt
+!services/mcp-servers/acme_delivery.py
+!services/mcp-servers/swiftnet_isp.py
+!tenants/fixtures/shipments.json
+!tenants/fixtures/lines.json

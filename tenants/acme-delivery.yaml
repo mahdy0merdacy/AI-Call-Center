@@ -31,11 +31,19 @@ flows:
       - "track my delivery"
       - "has my package shipped"
       - "my order hasn't arrived"
+      # Single keywords: STT mangles the phrasing ("where is my parcel" was heard
+      # as "may locate the parcel") but rarely the noun. Single words, not "my
+      # parcel": routing scores word overlap, so "my" alone would match half of it.
+      - "parcel"
+      - "package"
+      - "shipment"
+      - "tracking"
 
     # ENFORCED by the orchestrator. The LLM does the talking, but the flow
     # does not advance until every required slot is filled and valid.
     slots:
-      - name: shipment_id
+      - &shipment_id          # reused by reschedule_delivery below
+        name: shipment_id
         type: alphanumeric
         length: 10
         prompt: "Can I take your shipment ID? It's ten characters, on your confirmation email."
@@ -53,17 +61,40 @@ flows:
     # it rewrites these naturally, but cannot invent an outcome that did not occur.
     outcomes:
       delivered:   "Tell them it was delivered, with the date and who signed."
-      in_transit:  "Give the current location and the estimated delivery date."
+      in_transit:  "Give the current location and the estimated delivery date. Offer to move it to another day if that date does not suit."
       delayed:     "Apologise briefly, give the reason and the new estimate. Offer to escalate."
       not_found:   "Say you can't find that ID, ask them to double-check it. Do not speculate."
 
   - intent: reschedule_delivery
-    utterances: ["change my delivery date", "reschedule", "I won't be home"]
+    utterances:
+      - "change my delivery date"
+      - "reschedule"
+      - "I won't be home"
+      - "postpone"
+      - "new date"
+      - "deliver it another day"
+      - "a different day"
     requires_flow: track_shipment     # must identify the parcel first
+    # Slot names are the tool's argument names: filled slots ARE the tool call.
+    slots:
+      # Already known from the lookup, so never asked again.
+      - *shipment_id
+      - name: new_date
+        type: date                    # parsed from speech, sent as 2026-10-03
+        # "push it back three days" counts from the current estimate, and a date
+        # said without a year is the first one on or after it.
+        relative_to: estimated_delivery
+        prompt: "Sure. What date would you like it delivered instead?"
+        reprompt: "Which date would suit you? For example, the third of October."
+        on_invalid: "Sorry, I didn't catch a date. You can say something like the third of October, or three days later."
+        max_attempts: 3
+        endpointing:
+          silence_ms: 1200
     tool: reschedule_delivery
     outcomes:
-      ok:      "Confirm the new date back to them."
-      too_late: "Explain it's already out for delivery and cannot be changed today."
+      ok:      "Confirm the new date back to them, said as a day and month."
+      too_late: "Explain it's already out for delivery or delivered, so it cannot be changed."
+      not_found: "Say you couldn't find that shipment to reschedule it. Do not speculate."
 
 tools:
   - lookup_shipment

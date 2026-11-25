@@ -1,0 +1,105 @@
+# Auth service (tenant-portal) pipeline. Started by the root .gitlab-ci.yml (job
+# `tenant-portal`) only when files under services/tenant-portal/, ci/templates/ or the
+# root file change.
+#
+#   verify ─► test ─► build ─► scan ─► publish (default branch only)
+#
+# Every job except `tests` comes from ci/templates/django-service.yml, shared with the
+# documents service (services/documents), so both services are checked, built and
+# scanned identically. What stays here is what genuinely differs: this service's
+# variables (its code lives in src/) and its tests (pytest against a throwaway
+# PostgreSQL).
+#
+# CI/CD variables: none of its own. The tests use a dummy database password and generate
+# their own RSA keys and secrets (config/settings/test.py); the registry jobs use
+# GitLab's predefined CI_REGISTRY_* variables.
+
+include:
+  - local: ci/templates/django-service.yml
+
+# Only as a child of the root pipeline, never on its own.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+
+stages: [verify, test, build, scan, publish]
+
+variables:
+  SERVICE: tenant-portal
+  SERVICE_DIR: services/tenant-portal
+  APP_DIR: src
+  BUILD_CONTEXT: services/tenant-portal
+  # Measured at 68% (8 tests) when the pipeline was standardised. This floor stops it
+  # from dropping; raise it as tests are added (the documents service uses 90).
+  COVERAGE_MIN: "65"
+  BANDIT_EXCLUDE: "./accounts/tests,./audit/tests,./accounts/migrations,./audit/migrations"
+
+# ── verify ─────────────────────────────────────────────────────────────────────
+
+lint:
+  extends: .django-lint
+
+format:
+  extends: .django-format
+
+dockerfile:
+  extends: .django-dockerfile
+
+sast:
+  extends: .django-sast
+
+deps-scan:
+  extends: .django-deps-scan
+
+iac:
+  extends: .django-iac
+
+# ── test ───────────────────────────────────────────────────────────────────────
+
+tests:
+  extends: .django-tests
+  services:
+    # Same image as docker-compose.yml. Deleted at the end of the job.
+    - name: pgvector/pgvector:pg16
+      alias: db
+  variables:
+    DJANGO_SETTINGS_MODULE: config.settings.test
+    POSTGRES_DB: tenant_portal
+    POSTGRES_USER: portal
+    # Dummy value for the throwaway test database only.
+    POSTGRES_PASSWORD: ci-only-not-a-secret
+    DATABASE_URL: "postgres://portal:ci-only-not-a-secret@db:5432/tenant_portal"
+  script:
+    - python manage.py check
+    # Fails if a model change was committed without its migration.
+    - python manage.py makemigrations --check --dry-run
+    - mkdir -p "$CI_PROJECT_DIR/reports"
+    - >
+      pytest -v
+      --junitxml="$CI_PROJECT_DIR/reports/report.xml"
+      --cov --cov-report=term --cov-report=xml:"$CI_PROJECT_DIR/reports/coverage.xml"
+      --cov-fail-under="$COVERAGE_MIN"
+  artifacts:
+    reports:
+      junit: reports/report.xml
+
+bandit:
+  extends: .django-bandit
+
+# ── build / scan / publish ─────────────────────────────────────────────────────
+
+build-image:
+  extends: .docker-build
+  needs: [lint, format, dockerfile, sast, deps-scan, iac, tests, bandit]
+
+scan-image:
+  extends: .trivy-scan
+  needs: [build-image]
+
+sbom:
+  extends: .sbom
+  needs: [build-image]
+
+publish-main:
+  extends: .docker-promote-main
+  needs: [scan-image, sbom]

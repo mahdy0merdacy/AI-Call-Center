@@ -1,0 +1,12 @@
+{% autoescape off %}Hello,
+
+Someone tried to create a new AI Voice account with this email address, but an account already exists.
+
+If this was you, sign in here:
+{{ login_link }}
+
+Forgot your password? Reset it here:
+{{ reset_link }}
+
+If this was not you, you can ignore this email. Your account has not been changed.
+{% endautoescape %}
