@@ -34,6 +34,7 @@ Other scripts: `npm run typecheck`, `npm run build`, `npm run build:mock`, `npm 
 | `VITE_MAX_UPLOAD_MB` | `25` | Largest upload the portal accepts before sending. Keep it equal to the service's `MAX_UPLOAD_SIZE_MB`; the service enforces its own limit anyway. |
 | `VITE_GOOGLE_AUTH_URL` | `/_allauth/browser/v1/auth/provider/redirect` | allauth Google entry point used by "Continue with Google". |
 | `VITE_GOOGLE_AUTH_METHOD` | `post` | `post`: allauth headless provider redirect (a form POST with `provider`, `callback_url`, `process`). `get`: classic `/accounts/google/login/?process=login&next=…`. |
+| `VITE_VOICE_TEST_URL` | `''` | Media edge origin for the dashboard's *Test your agent* button (`${url}/w/<slug>`, new tab); empty disables it. The container's runtime `/config.js` takes precedence (see [Container image](#container-image)). |
 | `VITE_APP_NAME` | `AI Call Center` | Product name shown in the UI. |
 | `VITE_SUPPORT_EMAIL` | unset | "Help" link in the footer; hidden when unset. |
 | `VITE_PRIVACY_URL` / `VITE_TERMS_URL` | unset | Legal links in the footer; hidden when unset. |
@@ -170,6 +171,51 @@ content. Stored mock uploads keep only the name and size.
 `tenant-portal/.gitlab-ci.yml` is a child pipeline that the root
 `.gitlab-ci.yml` triggers when `tenant-portal/` changes. It runs `typecheck`,
 then builds both the real bundle and the mock bundle.
+
+## Container image
+
+```bash
+docker build -t aicc/web:dev tenant-portal
+```
+
+The `web` service of the containerised platform: the real bundle, built same-origin
+(`VITE_API_BASE_URL=""`, `VITE_DOCUMENTS_API_URL=""`), served by unprivileged nginx
+(uid 101) on port **8080**, which also proxies the API paths. The browser sees one
+origin, so there is no CORS and the cookies stay first-party.
+
+| Path | Goes to |
+| --- | --- |
+| `/api/auth/` `/api/tenant/` `/api/admin/` `/api/schema/` `/api/docs/` `/_allauth/` `/accounts/` `/.well-known/` `/health/` | `PORTAL_UPSTREAM` |
+| `/api/documents/` `/api/session-links/` | `DOCUMENTS_UPSTREAM` |
+| `/healthz` | nginx itself (`200 {"status":"ok"}`): the liveness and readiness probe |
+| `/config.js` | written at start-up from the environment (`window.__AICC_CONFIG__`), `no-cache` |
+| anything else | a file from the build, otherwise `index.html` (client-side routes) |
+
+Configuration is environment only, read at start-up, so one image serves every deployment:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORTAL_UPSTREAM` | `http://portal:8000` | Auth service. `http(s)://host[:port]`, no path; the container refuses to start otherwise. |
+| `DOCUMENTS_UPSTREAM` | `http://documents:8000` | Documents service, same format. |
+| `DNS_RESOLVER` | `127.0.0.11` | Resolves the upstreams **per request** (cached 10 s), so the gateway can start before its backends and follows one that restarts with a new IP. `127.0.0.11` is Docker's embedded DNS. |
+| `VOICE_TEST_URL` | `http://localhost:8082` | Media edge origin as the **browser** reaches it, for *Test your agent*. Empty disables the button. |
+
+Uploads up to 26 MB are accepted (the documents service takes 25 MB files); hashed
+`/assets/` are cached for a year, `index.html` and `config.js` are revalidated on every
+load. Static files are gzipped; proxied API responses are not, since they carry tokens.
+
+On Kubernetes (k3s):
+
+- Set `DNS_RESOLVER` to the cluster DNS IP (`kubectl -n kube-system get svc kube-dns`;
+  `10.43.0.10` on a default k3s) and give the upstreams **full** names, such as
+  `http://portal.<namespace>.svc.cluster.local:8000`: nginx's resolver does not use the
+  search domains in `/etc/resolv.conf`.
+- Probe `GET /healthz` on 8080. With `readOnlyRootFilesystem`, mount `emptyDir`
+  volumes at `/tmp` and `/etc/nginx/conf.d` (start-up writes `config.js` and the rendered
+  config there).
+- An `X-Forwarded-Proto` set by the ingress is passed on, not overwritten, so Django still
+  sees HTTPS. Count every proxy in front of Django in its `NUM_PROXIES` (1 for this
+  gateway, plus the ingress).
 
 ## Auth architecture
 

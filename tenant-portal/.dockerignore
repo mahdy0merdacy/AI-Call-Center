@@ -1,0 +1,14 @@
+# Allowlist: only what the build needs enters the context. node_modules, dist and
+# every .env* file (which may hold local values) stay out, so the image is built from
+# the lock file and the Dockerfile's own settings alone.
+*
+!docker/
+!public/
+!src/
+!index.html
+!package.json
+!package-lock.json
+!postcss.config.js
+!tailwind.config.ts
+!tsconfig.json
+!vite.config.ts

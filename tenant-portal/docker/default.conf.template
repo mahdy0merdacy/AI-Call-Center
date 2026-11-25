@@ -1,0 +1,103 @@
+# Web gateway: serves the portal's static build and proxies the API paths, so the
+# browser sees a single origin (no CORS; the refresh and CSRF cookies stay first-party).
+#
+# Rendered at start-up by the image's entrypoint. envsubst only replaces DNS_RESOLVER,
+# PORTAL_UPSTREAM and DOCUMENTS_UPSTREAM (NGINX_ENVSUBST_FILTER, set in the Dockerfile);
+# every other $variable below is nginx's own.
+
+# Keep the scheme an ingress in front of us already recorded (on k3s TLS ends there),
+# else this hop's own. Overwriting "https" with "http" would send Django's HTTPS
+# redirect into a loop.
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+    # The browser reached us through a port mapping or an ingress, not on 8080 directly.
+    absolute_redirect off;
+
+    root /usr/share/nginx/html;
+
+    # Backends are resolved per request (proxy_pass through a variable), not once at
+    # start-up: the gateway starts before them, and one that restarts with a new IP
+    # keeps working. nginx ignores resolv.conf search domains, so on Kubernetes the
+    # upstreams must be full names (portal.<namespace>.svc.cluster.local).
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 5s;
+    set $portal_upstream ${PORTAL_UPSTREAM};
+    set $documents_upstream ${DOCUMENTS_UPSTREAM};
+
+    # The documents service takes files up to 25 MB, plus multipart overhead.
+    client_max_body_size 26m;
+
+    # Host keeps the port the browser used: Django and allauth build absolute URLs from it.
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    # nginx receives a whole upload before passing it on, so a slow client never holds
+    # a gunicorn worker; these only bound the backend.
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 120s;
+    proxy_read_timeout 120s;
+
+    # Compression is switched on for static files only: proxied API responses carry
+    # tokens, and compressing a secret next to reflected input is what BREACH exploits.
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript image/svg+xml text/plain;
+
+    # Probe for Docker and Kubernetes: nginx itself, no backend involved.
+    location = /healthz {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"ok"}';
+    }
+
+    # Auth service: API, OpenAPI schema and docs, allauth (Google), JWKS, health.
+    location /api/auth/    { proxy_pass $portal_upstream; }
+    location /api/tenant/  { proxy_pass $portal_upstream; }
+    location /api/admin/   { proxy_pass $portal_upstream; }
+    location /api/schema/  { proxy_pass $portal_upstream; }
+    location /api/docs/    { proxy_pass $portal_upstream; }
+    location /_allauth/    { proxy_pass $portal_upstream; }
+    location /accounts/    { proxy_pass $portal_upstream; }
+    location /.well-known/ { proxy_pass $portal_upstream; }
+    location /health/      { proxy_pass $portal_upstream; }
+
+    # Documents service: knowledge uploads and session links.
+    location /api/documents/     { proxy_pass $documents_upstream; }
+    location /api/session-links/ { proxy_pass $documents_upstream; }
+
+    # Content-hashed names: a new build gets new names, so these can be cached for good.
+    # A missing chunk must 404, not come back as index.html labelled JavaScript.
+    location /assets/ {
+        gzip on;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Revalidated on every load, so a new deployment is picked up at once.
+    location = /index.html {
+        gzip on;
+        add_header Cache-Control "no-cache";
+        add_header X-Frame-Options "DENY";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    # Written from the environment at every start (40-runtime-config.sh).
+    location = /config.js {
+        root /tmp/aicc-web;
+        add_header Cache-Control "no-cache";
+    }
+
+    # A file from the build, or else a client-side route (/dashboard, /login...).
+    location / {
+        gzip on;
+        try_files $uri /index.html;
+    }
+}

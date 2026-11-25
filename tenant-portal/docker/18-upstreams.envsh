@@ -1,0 +1,30 @@
+#!/bin/sh
+# Sourced by the nginx entrypoint just before 20-envsubst-on-templates.sh renders the
+# config, so what it exports is what gets rendered. nginx resolves the upstreams per
+# request, so a bad value would otherwise only show up as an error on every proxied
+# call: refuse to start instead.
+
+aicc_upstream() {
+    value=$2
+    # A trailing slash counts as a URI for proxy_pass: every request would go to "/".
+    while [ "${value%/}" != "$value" ]; do value=${value%/}; done
+    case "$value" in
+        http://?* | https://?*) ;;
+        *) echo "18-upstreams.envsh: error: $1 must be an http(s) URL such as http://portal:8000, got '$2'" >&2
+           exit 1 ;;
+    esac
+    case "${value#*://}" in
+        */*) echo "18-upstreams.envsh: error: $1 must not have a path, got '$2'" >&2
+             exit 1 ;;
+    esac
+    export "$1=$value"
+}
+
+aicc_upstream PORTAL_UPSTREAM "${PORTAL_UPSTREAM:-}"
+aicc_upstream DOCUMENTS_UPSTREAM "${DOCUMENTS_UPSTREAM:-}"
+if [ -z "${DNS_RESOLVER:-}" ]; then
+    echo "18-upstreams.envsh: error: DNS_RESOLVER must be set (127.0.0.11 on Docker, the cluster DNS IP on Kubernetes)" >&2
+    exit 1
+fi
+unset -f aicc_upstream
+unset value
