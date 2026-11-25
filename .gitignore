@@ -29,3 +29,6 @@ data/.env
 !README.md
 !CONTRIBUTING.md
 docs/
+
+# Great Expectations project folder: generated from data/quality/suites.py on each run
+data/quality/gx/
