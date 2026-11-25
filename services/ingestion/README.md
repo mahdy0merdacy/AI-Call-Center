@@ -1,19 +1,23 @@
-# Ingestion worker
+# Ingestion worker and knowledge API
 
-Background worker that turns uploaded documents into searchable chunks for RAG.
+Background worker that turns uploaded documents into searchable chunks for RAG, and
+the knowledge API that searches them during calls. Same image, two programs.
 
 ```
 documents service (Mongo + uploads volume)  ->  ingestion worker  ->  document_chunks (Postgres + pgvector)
+                                                       | embeds through         ^ searches (read-only)
+                                                       v                        |
+                                               knowledge API (bge-m3, port 8100)  <-  orchestrator
 ```
 
-It has no HTTP API. It takes documents with `ingestion_status = "pending"` from the
-documents service's MongoDB, reads their files from the shared uploads volume
+The worker has no HTTP API. It takes documents with `ingestion_status = "pending"` from
+the documents service's MongoDB, reads their files from the shared uploads volume
 (read-only), and writes chunks + embeddings to `document_chunks` in the tenant-portal
 Postgres (created by `services/tenant-portal/db/postgres/02-pgvector.sql` and
 `03-rag-columns.sql`).
 
-All the heavy work (extraction, embedding) happens here, offline and once per
-document, so live calls only run a quick search.
+All the heavy work (extraction, embedding) happens offline and once per document,
+so live calls only run a quick search (see [Knowledge API](#knowledge-api)).
 
 ## Pipeline (one document at a time)
 
@@ -24,7 +28,7 @@ document, so live calls only run a quick search.
 | 3 | Extract | `chunking.extract_text` | pdf (pages joined with `\f`), docx, xlsx, csv, txt |
 | 4 | Clean | `cleaning.clean_text` | NFKC, spaces, repeated headers/footers, page numbers |
 | 5 | Chunk | `chunking.chunk_document` + `cleaning.drop_tiny` | `[Title > Section]` prefix, codes like `SCP-101` |
-| 6 | Embed | `embedding.Embedder` | `BAAI/bge-m3`, 1024 dims, normalized, loaded once |
+| 6 | Embed | `embedding.Embedder` | `BAAI/bge-m3`, 1024 dims, normalized, loaded once; with `EMBEDDING_URL`, `remote_embedding.RemoteEmbedder` asks the knowledge API instead |
 | 7 | Store | `postgres.replace_chunks` | ONE transaction: delete the document's rows, insert new ones; duplicates skipped |
 | 8 | Status | `mongo.mark_completed` / `mark_failed` / `release` | see below |
 
@@ -38,6 +42,7 @@ document, so live calls only run a quick search.
 | File missing from storage | `failed` | File not found in storage. Please upload it again. |
 | Bug in our code | `failed` | Processing failed (ErrorType). Details only in the worker log. |
 | Postgres connection lost | back to `pending` | none: not the document's fault, retried after reconnecting |
+| Knowledge API down for 2 min (`EMBEDDING_URL`) | back to `pending` | none: retried with backoff first, then later |
 | Worker killed mid-document | back to `pending` after `STUCK_AFTER_MINUTES` | none |
 
 Logs contain only ids, counts and timings, never document text.
@@ -47,8 +52,9 @@ Logs contain only ids, counts and timings, never document text.
 - Mongo stores `id` and `tenant_id` as 32 hex chars without dashes. `cleaning.to_uuid`
   converts them for the `UUID` columns; a malformed id is refused, never written.
 - `file` is a path relative to `MEDIA_ROOT`: `tenants/<tenant uuid>/<doc uuid>/<name>`.
-- Every row stores `embedding_model`. The orchestrator must embed questions with the
-  same model and normalization, or distances mean nothing.
+- Every row stores `embedding_model`. Questions must be embedded with the same model
+  and normalization, or distances mean nothing: the knowledge API does both, and only
+  compares rows of the model it has loaded.
 
 ## Run locally (Docker)
 
@@ -77,9 +83,63 @@ document 5c33... (tenant cfc0...) completed: 14 chunks in 4.2 s
 |---|---|---|
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | changing it means re-embedding every document |
 | `EMBEDDING_THREADS` | `2` | CPU threads for embedding; kept low next to live calls |
+| `EMBEDDING_URL` | unset | e.g. `http://knowledge:8100`: embed through the knowledge API (no model in the worker, ~3 GB less RAM). Unset: load the model here, as above |
 | `STUCK_AFTER_MINUTES` | `10` | `processing` longer than this goes back to `pending` |
 | `POLL_INTERVAL_SECONDS` | `5` | wait between two looks when nothing is pending |
 | `WORKER_CPUS` / `WORKER_MEMORY` | `2` / `4g` | Docker limits (compose), so ingestion can't starve live calls |
+
+## Knowledge API
+
+`python -m ingestion.api` (same image, other command): holds the ONE copy of bge-m3 in
+RAM, embeds for the worker and searches for the orchestrator. Listens on `0.0.0.0:$PORT`.
+
+| Endpoint | Answer |
+|---|---|
+| `GET /livez` | `200 {"status":"alive"}` as soon as the process serves HTTP (liveness probe) |
+| `GET /healthz` | `200 {"status":"ok","model":"BAAI/bge-m3","dimensions":1024}` once the model is loaded AND Postgres answers; else `503 {"status":"starting"\|"unavailable","detail":...}` (readiness probe) |
+| `POST /v1/embed` | `{"texts":[...]}` (1-64 texts, 1-8000 characters each) -> `{"model","dimensions","vectors"}`: exactly `Embedder.embed`, same order |
+| `POST /v1/search` | `{"tenant_id":"<uuid>","query":"...","k":4}` (query 1-2000 characters, k 1-10) -> `{"chunks":[{"document_id","document_title","section","content","score"}],"took_ms"}` |
+
+Invalid input is a `400`; the model not loaded yet or Postgres unreachable is a `503`.
+
+How a search works (`search.py`): the tenant's top 20 chunks by meaning (cosine
+distance, hnsw index) and its top 20 by words (`websearch_to_tsquery('simple', ...)`,
+`ts_rank_cd`), fused with Reciprocal Rank Fusion (`1 / (60 + rank)`), best `k` returned.
+**Both queries filter on `tenant_id` AND `embedding_model`**: a tenant never gets
+another tenant's chunks. With pgvector >= 0.8, iterative index scans keep the filtered
+vector query complete.
+
+Design points:
+
+- The model loads in the background: `/livez` answers at once, `/healthz` turns ok
+  when it is ready (seconds from the cache; the first start downloads ~2.3 GB). A
+  failed load is retried (10 s, doubling up to 5 min) and shown in `/healthz`.
+- ONE thread runs every model call, one at a time (RAM stays at one call's worth), and
+  a caller's question goes before queued ingestion work. Ingestion texts are encoded
+  one by one, so a question waits for one chunk at most (~0.7 s on 2 threads), never a
+  whole batch.
+- Postgres is reached through a small pool (`voice_reader`, read-only) that connects
+  in the background and replaces broken connections: start order does not matter, and
+  a Postgres restart needs no restart here. `statement_timeout` is 2 s.
+- No document text is logged; the probe requests are kept out of the access log.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | required | read-only DSN (`voice_reader`: `SELECT` on `document_chunks`) |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | must be the model the worker stored (`embedding_model` column) |
+| `EMBEDDING_THREADS` | `2` | CPU threads for the model |
+| `PORT` | `8100` | HTTP port |
+| `HF_HOME` | `/models/huggingface` | model cache (a volume, so the download happens once) |
+| `HF_HUB_OFFLINE` | unset | `1`: never contact the Hub (the model must be in `HF_HOME` already) |
+
+Needs ~3 GB of RAM. The image has no curl; a compose healthcheck can use Python:
+`python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/healthz', timeout=3)"`.
+
+The worker with `EMBEDDING_URL` set waits (backoff 1 s doubling to 30 s) until
+`/healthz` is ok and serves the same model as its `EMBEDDING_MODEL`, checks one
+embedding end to end, then sends batches of 32. Connection errors, timeouts and
+429/502/503/504 are retried for up to 2 minutes; after that the document goes back to
+`pending` (not its fault) and is tried again later.
 
 ## Dev scripts (Mongo)
 
@@ -127,3 +187,8 @@ python -m venv .venv
 - `chunking.CODE` also matches document ids (`Document ID: STK-001` -> codes `STK-001`).
 - Chunks of different rules can share a section name ("Stock Control Code" for both
   SCP-101 and SCP-102): document versions (step 3b) must include the code in the key.
+- The words query needs EVERY word of the question in a chunk (`websearch_to_tsquery`
+  joins them with AND, and `simple` keeps "how", "the"...). It catches codes and short
+  questions; long spoken questions are found by the meaning query.
+- One knowledge API = one model thread: a question embeds in ~0.2 s on 2 threads, so
+  many simultaneous calls queue. Scale with replicas (~3 GB each) or more threads.

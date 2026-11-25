@@ -10,6 +10,7 @@ That is why every row stores embedding_model.
 """
 
 import logging
+from typing import Protocol
 
 import numpy as np
 
@@ -24,6 +25,18 @@ DIMENSIONS = 1024
 MAX_TOKENS = 512
 # Chunks embedded together in one pass. Bigger = a bit faster, more RAM.
 BATCH_SIZE = 16
+
+
+class TextEmbedder(Protocol):
+    """What the worker and the knowledge API need from a model.
+
+    Embedder (the model in this process) and remote_embedding.RemoteEmbedder (the
+    model in the knowledge service) both provide it.
+    """
+
+    model_name: str
+
+    def embed(self, texts: list[str]) -> np.ndarray: ...
 
 
 class Embedder:

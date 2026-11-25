@@ -1,4 +1,5 @@
 # Tests and lint. Not installed in the image.
+# httpx (FastAPI's TestClient) comes with requirements.txt: the worker uses it too.
 -r requirements.txt
 pytest==9.2.0
 ruff==0.17.2

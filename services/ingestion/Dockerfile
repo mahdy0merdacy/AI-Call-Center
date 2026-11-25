@@ -1,5 +1,9 @@
-# Ingestion worker image. Build context is this directory (services/ingestion).
+# Ingestion image. Build context is this directory (services/ingestion).
 #   docker build -t ingestion .
+# One image, two programs:
+#   worker      default CMD               turns uploads into document_chunks
+#   knowledge   python -m ingestion.api   the one model in RAM: embeds and searches,
+#                                         port 8100 (PORT), probes /livez and /healthz
 
 # Same base + pinned digest as the documents service.
 ARG BASE=python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
@@ -45,6 +49,10 @@ COPY ingestion ./ingestion
 
 USER 10001
 
-# No HTTP port: it is a background worker. No secrets here: MONGODB_URI and
-# DATABASE_URL are supplied at runtime.
+# The knowledge API's port; the worker opens none. No secrets here: MONGODB_URI,
+# DATABASE_URL and EMBEDDING_URL are supplied at runtime.
+EXPOSE 8100
+
+# Exec form: python is PID 1 and gets SIGTERM, so the worker finishes its current
+# document (and the API its requests) before stopping.
 CMD ["python", "-m", "ingestion.worker"]

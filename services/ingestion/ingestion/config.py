@@ -32,6 +32,9 @@ class Settings:
     embedding_threads: int
     # A document "processing" for longer than this is given back (worker died).
     stuck_after_minutes: int
+    # Knowledge service (e.g. http://knowledge:8100). Set: embed through it, so the
+    # machine holds ONE copy of the model. Empty: load the model here, as before.
+    embedding_url: str = ''
 
     @classmethod
     def from_env(cls) -> 'Settings':
@@ -44,4 +47,27 @@ class Settings:
             embedding_model=os.environ.get('EMBEDDING_MODEL', MODEL_NAME),
             embedding_threads=int(os.environ.get('EMBEDDING_THREADS', '2')),
             stuck_after_minutes=int(os.environ.get('STUCK_AFTER_MINUTES', '10')),
+            embedding_url=os.environ.get('EMBEDDING_URL', '').strip().rstrip('/'),
+        )
+
+
+@dataclass(frozen=True)
+class KnowledgeSettings:
+    """Settings of the knowledge service (python -m ingestion.api)."""
+
+    # Read-only role (voice_reader): SELECT on document_chunks, nothing else.
+    database_url: str
+    # Must be the model the worker stored in document_chunks.embedding_model:
+    # searches only compare vectors made by the same model.
+    embedding_model: str
+    embedding_threads: int
+    port: int
+
+    @classmethod
+    def from_env(cls) -> 'KnowledgeSettings':
+        return cls(
+            database_url=_require('DATABASE_URL'),
+            embedding_model=os.environ.get('EMBEDDING_MODEL', MODEL_NAME),
+            embedding_threads=int(os.environ.get('EMBEDDING_THREADS', '2')),
+            port=int(os.environ.get('PORT', '8100')),
         )

@@ -3,7 +3,14 @@
 # Databases
 pymongo==4.20.1
 psycopg[binary]==3.3.9
+psycopg-pool==3.3.3            # knowledge API: a few connections reused by every search
 pgvector==0.5.1                # numpy arrays <-> Postgres "vector" type
+
+# Knowledge API (python -m ingestion.api), same pins as services/sentiment
+fastapi==0.165.0
+uvicorn==0.54.0
+# The worker's client for it (EMBEDDING_URL); also FastAPI's TestClient in tests
+httpx==0.28.1
 
 # Text extraction (chunking.extract_text)
 pypdf==7.1.1

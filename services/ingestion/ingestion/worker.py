@@ -14,6 +14,9 @@ For each pending document (one at a time):
 All the heavy work happens here, offline and once per document, so live calls
 only have to run a quick search (RAG phase 1).
 
+With EMBEDDING_URL set, step 6 runs in the knowledge service (remote_embedding),
+which holds the only copy of the model; otherwise the model is loaded here.
+
 Run: python -m ingestion.worker
 """
 
@@ -31,8 +34,9 @@ from . import mongo, postgres
 from .chunking import chunk_document, extract_text
 from .cleaning import clean_text, drop_tiny
 from .config import Settings
-from .embedding import Embedder
+from .embedding import Embedder, TextEmbedder
 from .errors import IngestionError
+from .remote_embedding import EmbeddingUnavailable, RemoteEmbedder
 from .storage import read_document_file
 
 log = logging.getLogger('ingestion')
@@ -51,17 +55,25 @@ def _extract(filename: str, data: bytes) -> str:
         raise IngestionError('Could not read the file (damaged or password-protected?).') from exc
 
 
+def make_embedder(settings: Settings, stop: threading.Event) -> TextEmbedder:
+    """The knowledge service's model if EMBEDDING_URL is set, else our own copy."""
+    if settings.embedding_url:
+        return RemoteEmbedder(settings.embedding_url, settings.embedding_model, stop=stop)
+    return Embedder(settings.embedding_model, threads=settings.embedding_threads)
+
+
 def process_one(
     doc: dict,
     documents: Collection,
     conn: psycopg.Connection,
-    embedder: Embedder,
+    embedder: TextEmbedder,
     settings: Settings,
 ) -> None:
     """Run the whole pipeline for ONE claimed document and set its final status.
 
-    Postgres connection errors are NOT caught here: they are our problem, not the
-    document's, so the caller gives the document back and reconnects.
+    Postgres connection errors and an unavailable knowledge service are NOT caught
+    here: they are our problem, not the document's, so the caller gives the
+    document back (and reconnects).
     """
     started = time.perf_counter()
     # Only ids in the logs: never the document's text (tenant data).
@@ -79,8 +91,8 @@ def process_one(
         log.warning('%s failed: %s', doc_ref, exc)
         mongo.mark_failed(documents, doc, str(exc))
         return
-    except psycopg.OperationalError:
-        raise  # connection problem: handled by the main loop
+    except (psycopg.OperationalError, EmbeddingUnavailable):
+        raise  # infrastructure problem: handled by the main loop
     except Exception as exc:
         # A bug on our side: full details in our log, a generic message for the tenant.
         log.exception('%s failed with an unexpected error', doc_ref)
@@ -102,12 +114,13 @@ def main() -> None:
     if not settings.media_root.is_dir():
         log.warning('MEDIA_ROOT %s is not a directory: uploads cannot be read', settings.media_root)
 
-    # Slow (model load), so done once, before taking any document.
-    embedder = Embedder(settings.embedding_model, threads=settings.embedding_threads)
+    stop = threading.Event()
+    # Slow (model load, or waiting for the knowledge service), so done once,
+    # before taking any document.
+    embedder = make_embedder(settings, stop)
 
     # Stop cleanly on SIGTERM (docker stop) or Ctrl+C. The document being processed
     # is finished first; the loop stops before taking the next one.
-    stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
@@ -136,6 +149,12 @@ def main() -> None:
                     # Postgres went away mid-document. Not the document's fault:
                     # give it back now, reconnect on the next round.
                     log.exception('Postgres connection lost; document %s put back', doc.get('id'))
+                    mongo.release(documents, doc)
+                    stop.wait(settings.poll_interval)
+                except EmbeddingUnavailable as exc:
+                    # Knowledge service down or restarting (after retries): same
+                    # thing, the document goes back to the queue untouched.
+                    log.warning('%s; document %s put back', exc, doc.get('id'))
                     mongo.release(documents, doc)
                     stop.wait(settings.poll_interval)
 
