@@ -223,6 +223,12 @@ class Tenant:
     knowledge_text: str
     guardrails: list[str]
     escalation: dict
+    # Where the tenant comes from: "test" (tenants/*.yaml) or "platform" (signed up
+    # in the portal; built by app/tenants.py).
+    source: str = "test"
+    # Platform tenants only: their accounts_tenant UUID, which keys document
+    # retrieval. None = no retrieval; the knowledge is in the prompt, or absent.
+    knowledge_id: str | None = None
 
     @property
     def language(self) -> str:

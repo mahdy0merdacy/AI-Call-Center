@@ -6,3 +6,7 @@ aiohttp==3.14.5           # 3.14.3 has 3 HIGH CVEs (Trivy)
 mcp==2.2.0
 PyYAML==6.0.3
 confluent-kafka==2.16.0   # call events (libs/aicc_events); idle unless KAFKA_BOOTSTRAP is set
+# Platform tenants from the portal's Postgres; idle unless PLATFORM_DATABASE_URL is set.
+# [binary] bundles libpq, so the slim image needs no system packages.
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
