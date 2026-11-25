@@ -36,8 +36,15 @@ WORKDIR /srv/aicc/services/orchestrator
 USER 10001
 EXPOSE 50052
 
-# Exec form: python is PID 1 and receives SIGTERM, which server.py drains on.
-# MCP endpoints and the model are flags; override them per environment.
-# Call events: set KAFKA_BOOTSTRAP and SCHEMA_REGISTRY_URL to publish them.
+# For Docker/Compose only; Kubernetes ignores it and uses a native gRPC probe.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-m", "app.healthcheck"]
+
+# Exec form: python is PID 1 and receives SIGTERM, which server.py drains on: live
+# calls get SHUTDOWN_GRACE_S (25 s) to finish, so give the container 35 s to stop
+# (Compose stop_grace_period, k8s terminationGracePeriodSeconds). Docker's 10 s
+# default would kill calls mid-sentence.
+# Configuration is environment only (HOST, PORT, LLM_*, MCP_SERVERS, KNOWLEDGE_URL,
+# PLATFORM_DATABASE_URL...; see app/server.py), so no CMD: flags still work as
+# arguments. Call events: set KAFKA_BOOTSTRAP and SCHEMA_REGISTRY_URL.
 ENTRYPOINT ["python", "-m", "app.server"]
-CMD ["--port", "50052"]

@@ -23,6 +23,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -30,6 +31,31 @@ from mcp.client.streamable_http import streamable_http_client
 log = logging.getLogger("tools")
 
 DEFAULT_TIMEOUT_S = 3.0
+
+
+def parse_mcp_servers(spec: str) -> dict[str, str]:
+    """MCP_SERVERS -> {tool: url}. The spec is "tool=url,tool=url", e.g.
+    "lookup_shipment=http://mcp-acme:9101/mcp,check_line_status=http://mcp-swiftnet:9102/mcp".
+
+    Spaces around entries and empty entries (a trailing comma) are ignored. Any
+    other mistake is an error at startup: a tool silently left without an
+    endpoint would only surface mid-call, as a `no_endpoint` outcome.
+    Errors name the entry by position, not by content: a URL may carry credentials.
+    """
+    servers: dict[str, str] = {}
+    for n, entry in enumerate(spec.split(","), 1):
+        if not entry.strip():
+            continue
+        tool, sep, url = (part.strip() for part in entry.partition("="))
+        if not (sep and tool and url):
+            raise ValueError(f"MCP_SERVERS entry {n} is not tool=url")
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ValueError(f"MCP_SERVERS entry {n} ({tool}) is not an http(s) URL")
+        if servers.get(tool, url) != url:
+            raise ValueError(f"MCP_SERVERS maps {tool} to two different URLs")
+        servers[tool] = url
+    return servers
 
 
 def _payload(res) -> dict[str, Any]:
