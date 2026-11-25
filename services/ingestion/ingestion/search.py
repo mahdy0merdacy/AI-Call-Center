@@ -25,6 +25,8 @@ import psycopg
 from pgvector.psycopg import register_vector
 from psycopg_pool import ConnectionPool
 
+from .postgres import DEAD_PEER
+
 log = logging.getLogger('ingestion')
 
 # Rows each ranking brings to the fusion.
@@ -154,7 +156,7 @@ class ChunkStore:
             min_size=1,
             max_size=4,
             open=False,
-            kwargs={'autocommit': True, 'connect_timeout': 3},
+            kwargs={'autocommit': True, 'connect_timeout': 3, **DEAD_PEER},
             configure=_configure,
             # Tested when taken from the pool: a connection broken by a Postgres
             # restart is replaced instead of failing a caller's search.

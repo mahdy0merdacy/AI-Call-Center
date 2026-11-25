@@ -14,11 +14,18 @@ from pgvector.psycopg import register_vector
 from .chunking import Chunk
 from .cleaning import to_uuid
 
+# libpq options so a Postgres that vanished without closing the connection (node
+# lost) fails the query within seconds, not after ~15 minutes of TCP retries.
+DEAD_PEER = {
+    'keepalives': 1, 'keepalives_idle': 10, 'keepalives_interval': 3,
+    'keepalives_count': 3, 'tcp_user_timeout': 5000,
+}
+
 
 def connect(database_url: str) -> psycopg.Connection:
     # autocommit=True: no transaction is left open between documents. Writes that
     # must succeed or fail together use an explicit `with conn.transaction():`.
-    conn = psycopg.connect(database_url, connect_timeout=5, autocommit=True)
+    conn = psycopg.connect(database_url, connect_timeout=5, autocommit=True, **DEAD_PEER)
     check_schema(conn)
     # Teach psycopg the `vector` type: numpy arrays are sent as pgvector values.
     # Done after check_schema, because it needs the extension to exist.

@@ -50,6 +50,13 @@ LISTING_TIMEOUT_S = 1.5
 # timeout (a refused connection still costs the pool its full wait).
 STALE_RETRY_S = 5.0
 MAX_CACHED_SLUGS = 1024     # bounds memory when callers probe random slugs
+INFLIGHT_MAX_S = 10.0       # a shared read older than this is presumed hung
+# libpq options so a dead peer fails a query within seconds instead of the
+# kernel's ~15 minutes of TCP retransmission (the knowledge service sets the same).
+DEAD_PEER_KWARGS = {
+    "keepalives": 1, "keepalives_idle": 10, "keepalives_interval": 3,
+    "keepalives_count": 3, "tcp_user_timeout": 5000,
+}
 
 PLATFORM_LOCALE = "en-US"
 PLATFORM_SPEAKER = "Aria"
@@ -131,8 +138,9 @@ def platform_tenant(row: PlatformTenant) -> Tenant:
             f"You are the phone assistant for {name}. You answer callers' questions "
             f"using only {name}'s own documents, which you are given as reference "
             "material.\n"
-            "If the documents do not cover a question, say so plainly and offer to "
-            f"take a message for someone from {name} to call back.\n"
+            "If the documents do not cover a question, say so plainly and suggest "
+            f"contacting {name} directly. Nothing on this line records messages or "
+            "books callbacks, so never offer either.\n"
             "Never invent prices, dates, policies, availability or any other fact "
             "that is not in the documents."
         ),
@@ -142,7 +150,8 @@ def platform_tenant(row: PlatformTenant) -> Tenant:
         knowledge_text="",
         guardrails=[],
         escalation={
-            "message": f"Let me take a message and have someone from {name} call you back."
+            # Nothing records a message yet, so promise none: point them to the company.
+            "message": f"I can't help further on this call. Please contact {name} directly."
         },
         source="platform",
         knowledge_id=row.id,
@@ -187,6 +196,7 @@ class TenantDirectory:
         # One query per key at a time: a burst of calls for a client whose entry
         # just expired shares one lookup instead of queueing for the pool.
         self._inflight: dict[str, asyncio.Future[Any]] = {}
+        self._inflight_since: dict[str, float] = {}
         self._collisions: set[tuple[str, str]] = set()
 
     async def get(self, slug: str) -> Tenant | None:
@@ -302,9 +312,14 @@ class TenantDirectory:
         block: psycopg waits for the server to acknowledge a cancelled query.
         """
         task = self._inflight.get(key)
+        # A read stuck far past its budget (a hung connection) is not shared
+        # forever: the next caller starts a fresh one on another connection.
+        if task is not None and self._clock() - self._inflight_since[key] > INFLIGHT_MAX_S:
+            task = None
         if task is None:
             task = asyncio.ensure_future(read())
             self._inflight[key] = task
+            self._inflight_since[key] = self._clock()
             task.add_done_callback(lambda t: self._landed(key, t))
         done, _ = await asyncio.wait({task}, timeout=timeout_s)
         if not done:
@@ -314,6 +329,7 @@ class TenantDirectory:
     def _landed(self, key: str, task: asyncio.Future[Any]) -> None:
         if self._inflight.get(key) is task:
             del self._inflight[key]
+            del self._inflight_since[key]
         if not task.cancelled() and (exc := task.exception()) is not None:
             log.debug("platform query %s failed: %s", key, _reason(exc))
 
@@ -350,6 +366,11 @@ class PostgresPlatformSource:
                 "autocommit": True,
                 "connect_timeout": max(2, round(timeout_s)),   # libpq's minimum is 2 s
                 "application_name": "orchestrator",
+                # A peer that vanished without closing (node lost, cable pulled)
+                # must fail the query, not hang it: statement_timeout is enforced
+                # by the server, which is exactly what is gone. Unacked writes
+                # give up after 5 s, an idle socket is probed after 10 s.
+                **DEAD_PEER_KWARGS,
             },
             configure=configure,
             # A connection broken by a Postgres restart is replaced, not handed out.

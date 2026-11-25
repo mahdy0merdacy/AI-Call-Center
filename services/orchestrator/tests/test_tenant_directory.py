@@ -100,8 +100,8 @@ def test_a_platform_client_gets_the_generic_assistant(tenant):
                        "greeting": "Hello, you've reached Bistro Lumière. "
                                    "How can I help you today?"}
     assert (t.flows, t.tools, t.knowledge_text) == ([], [], "")
-    assert t.escalation == {"message": "Let me take a message and have someone from "
-                                       "Bistro Lumière call you back."}
+    assert t.escalation == {"message": "I can't help further on this call. "
+                                       "Please contact Bistro Lumière directly."}
     assert "only Bistro Lumière's own documents" in t.persona
     assert "Never invent prices, dates, policies" in t.persona
 
@@ -224,6 +224,29 @@ def test_a_hung_postgres_cannot_hold_a_call_start(tenant):
         return time.perf_counter() - t0
 
     assert asyncio.run(hung_lookup()) < 1.0
+
+
+def test_a_read_hung_past_its_age_limit_is_not_shared_forever(tenant):
+    """A query stuck on a dead connection must not hold every later lookup of
+    that slug: past INFLIGHT_MAX_S the next caller starts a fresh read."""
+    import app.tenants as tenants_mod
+
+    directory, platform, clock = _directory(tenant, BISTRO, timeout_s=0.05)
+
+    async def scenario():
+        platform.gate = asyncio.Event()           # the first read hangs
+        with pytest.raises(DirectoryUnavailable):
+            await directory.get("bistro")
+        with pytest.raises(DirectoryUnavailable):
+            await directory.get("bistro")         # still young: shared, no new query
+        assert platform.fetches == ["bistro"]
+        clock.now += tenants_mod.INFLIGHT_MAX_S + 1   # the first read is now presumed hung
+        platform.gate.set()                       # Postgres answers again
+        platform.gate = None
+        return await directory.get("bistro")
+
+    assert asyncio.run(scenario()) is not None
+    assert len(platform.fetches) >= 2             # a fresh read was started
 
 
 def test_concurrent_call_starts_share_one_query(tenant):

@@ -114,15 +114,24 @@ def main() -> None:
     if not settings.media_root.is_dir():
         log.warning('MEDIA_ROOT %s is not a directory: uploads cannot be read', settings.media_root)
 
+    # Stop cleanly on SIGTERM (docker stop, k8s) or Ctrl+C. The document being
+    # processed is finished first; the loop stops before taking the next one.
+    # Installed BEFORE the embedder: as PID 1, an unhandled SIGTERM is dropped,
+    # and waiting for the knowledge service can take minutes.
     stop = threading.Event()
-    # Slow (model load, or waiting for the knowledge service), so done once,
-    # before taking any document.
-    embedder = make_embedder(settings, stop)
-
-    # Stop cleanly on SIGTERM (docker stop) or Ctrl+C. The document being processed
-    # is finished first; the loop stops before taking the next one.
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
+
+    # Slow (model load, or waiting for the knowledge service), so done once,
+    # before taking any document.
+    try:
+        embedder = make_embedder(settings, stop)
+    except EmbeddingUnavailable:
+        if not stop.is_set():
+            raise
+        conn.close()
+        log.info('stopped while waiting for the embedder')
+        return
 
     last_reset = 0.0
     try:
