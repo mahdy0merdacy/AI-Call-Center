@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "services" / "orchestrator"), str(ROOT / "libs")]
 
 from aicc_events import new_ulid
+
 from gen import orchestrator_pb2 as pb
 from gen import orchestrator_pb2_grpc as pb_grpc
 
@@ -159,7 +160,7 @@ async def run_call(stub, scenario, tenant: str, lines: list[str], args) -> Resul
                 hung_up.set()
                 return
 
-    async def agent_finished(timeout: float):
+    async def agent_finished(timeout: float):  # noqa: ASYNC109 (deadline also bounds the quiet wait)
         """Answered, then went quiet: the turn is over (there is no end-of-turn directive)."""
         deadline = time.monotonic() + timeout
         try:

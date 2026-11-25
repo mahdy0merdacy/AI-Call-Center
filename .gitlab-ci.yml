@@ -85,4 +85,16 @@ orchestrator:
         - tenants/**/*                  # its behaviour is configured here
         - ci/templates/**/*
         - .gitlab-ci.yml
-  
+
+data:
+  extends: .child
+  trigger:
+    include: data/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - data/**/*
+        - libs/aicc_events/**/*         # generated copy of the event schema
+        - tenants/**/*                  # quality checks read the tenant ids
+        - .gitlab-ci.yml
