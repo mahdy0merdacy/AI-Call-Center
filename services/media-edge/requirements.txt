@@ -1,0 +1,7 @@
+# Media edge runtime. No GPU, no model: WebRTC, resampling and gRPC clients.
+aiohttp==3.14.5           # same pin as the orchestrator (3.14.3 has HIGH CVEs)
+aiortc==1.15.0            # wheels bundle libsrtp, opus and vpx
+av==17.1.0                # wheels bundle FFmpeg; used for the 48k -> 16k resample
+grpcio==1.84.0
+protobuf==7.36.2          # must match the generated gen/*_pb2.py
+numpy==2.5.3

@@ -286,6 +286,7 @@ async def offer(request):
         log.info("connection %s", pc.connectionState)
         if pc.connectionState in ("failed", "closed", "disconnected"):
             call.closed = True
+            app["calls"].discard(call)   # else /healthz counts ended calls forever
 
     @pc.on("track")
     def on_track(track):
@@ -311,6 +312,12 @@ async def index(request):
 
 async def widget(request):
     return web.FileResponse(STATIC / "index.html")
+
+
+async def healthz(request):
+    """Liveness/readiness for k8s. The edge holds no model, so it is ready as soon
+    as it listens; the active-call count shows whether a rollout would cut calls."""
+    return web.json_response({"status": "ok", "calls": len(request.app["calls"])})
 
 
 async def on_shutdown(app):
@@ -350,6 +357,7 @@ def main():
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/w/{slug}", widget)
+    app.router.add_get("/healthz", healthz)
     app.router.add_post("/offer", offer)
     app.router.add_static("/static", STATIC)
 

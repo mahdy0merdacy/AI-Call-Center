@@ -1,0 +1,3 @@
+# Build context is data/: send only what the image copies.
+*
+!quality/requirements.txt
