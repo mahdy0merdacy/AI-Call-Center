@@ -27,7 +27,11 @@ def request_password_reset(email: str, request: HttpRequest) -> None:
 def get_reset_user(uidb64: str, token: str) -> User | None:
     """Return the user if the reset token is valid, else None."""
     user = get_user_from_uid(uidb64)
-    if user is None or not user.is_active or not password_reset_token.check_token(user, token):
+    if (
+        user is None
+        or not user.is_active
+        or not password_reset_token.check_token(user, token)
+    ):
         return None
     return user
 
@@ -42,7 +46,14 @@ def confirm_password_reset(user: User, new_password: str, request: HttpRequest) 
         user.set_password(new_password)
         user.failed_login_attempts = 0
         user.locked_until = None
-        user.save(update_fields=["password", "failed_login_attempts", "locked_until", "updated_at"])
+        user.save(
+            update_fields=[
+                "password",
+                "failed_login_attempts",
+                "locked_until",
+                "updated_at",
+            ]
+        )
         revoke_all_refresh_tokens(user)
     AxesProxyHandler.reset_attempts(username=user.email)
     log_auth_event(EventType.PASSWORD_RESET_DONE, request=request, user=user)

@@ -32,7 +32,8 @@ def exchange_google_session(request: HttpRequest) -> tuple[User, TokenPair]:
     is_recent_google = (
         last.get("method") == "socialaccount"
         and last.get("provider") == "google"
-        and time.time() - last.get("at", 0) <= settings.GOOGLE_EXCHANGE_MAX_AGE.total_seconds()
+        and time.time() - last.get("at", 0)
+        <= settings.GOOGLE_EXCHANGE_MAX_AGE.total_seconds()
     )
     django_logout(request)
     if not (user.is_authenticated and is_recent_google):

@@ -49,7 +49,9 @@ def _register_and_verify(api: APIClient) -> None:
 
 
 def _login(api: APIClient, password: str):
-    return api.post("/api/auth/login/", {"email": EMAIL, "password": password}, format="json")
+    return api.post(
+        "/api/auth/login/", {"email": EMAIL, "password": password}, format="json"
+    )
 
 
 def test_register_login_and_call_protected_endpoint(api):
@@ -58,7 +60,9 @@ def test_register_login_and_call_protected_endpoint(api):
     response = _login(api, PASSWORD)
     assert response.status_code == 200
     assert response.json()["token_type"] == "Bearer"
-    assert "refresh_token" in response.cookies  # refresh token only in the HttpOnly cookie
+    assert (
+        "refresh_token" in response.cookies
+    )  # refresh token only in the HttpOnly cookie
     assert response.cookies["refresh_token"]["httponly"]
     access = response.json()["access_token"]
 

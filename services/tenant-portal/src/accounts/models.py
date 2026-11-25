@@ -6,7 +6,11 @@ import os
 import uuid
 
 from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
@@ -56,7 +60,9 @@ class UserManager(BaseUserManager["User"]):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email: str, password: str | None = None, **fields) -> User:
+    def create_superuser(
+        self, email: str, password: str | None = None, **fields
+    ) -> User:
         """Create a platform admin: verified email, no tenant, staff."""
         fields.update(
             role=User.Role.PLATFORM_ADMIN,
@@ -81,7 +87,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    role = models.CharField(max_length=32, choices=Role.choices, default=Role.TENANT_ADMIN)
+    role = models.CharField(
+        max_length=32, choices=Role.choices, default=Role.TENANT_ADMIN
+    )
     is_active = models.BooleanField(default=True)
     is_email_verified = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
@@ -120,7 +128,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().clean()
         self.email = normalize_email_address(self.email)
         if self.role == self.Role.PLATFORM_ADMIN and self.tenant_id is not None:
-            raise ValidationError({"tenant": "Platform admins cannot belong to a tenant."})
+            raise ValidationError(
+                {"tenant": "Platform admins cannot belong to a tenant."}
+            )
         if (
             self.role == self.Role.TENANT_ADMIN
             and self.tenant_id is None
@@ -156,7 +166,9 @@ class MFAChallenge(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mfa_challenges")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="mfa_challenges"
+    )
     attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()

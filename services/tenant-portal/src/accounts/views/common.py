@@ -35,7 +35,9 @@ def token_response(pair: TokenPair, http_status: int = status.HTTP_200_OK) -> Re
 
 
 def login_failed_response() -> Response:
-    return Response({"detail": GENERIC_LOGIN_ERROR}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response(
+        {"detail": GENERIC_LOGIN_ERROR}, status=status.HTTP_401_UNAUTHORIZED
+    )
 
 
 def detail_response(message: str, http_status: int = status.HTTP_200_OK) -> Response:

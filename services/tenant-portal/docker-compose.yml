@@ -37,6 +37,8 @@ services:
       context: .
       args:
         INSTALL_DEV: "true"
+        # Same user as the host, so the bind-mounted private key (mode 600) is readable.
+        APP_UID: "1000"
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev

@@ -57,7 +57,9 @@ def test_tampered_access_token_is_rejected():
     header, payload, signature = str(_new_access_token()).split(".")
     claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
     claims["role"] = "platform_admin"  # privilege escalation attempt
-    forged_payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    forged_payload = (
+        base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    )
 
     with pytest.raises(TokenError):
         PortalAccessToken(f"{header}.{forged_payload}.{signature}")

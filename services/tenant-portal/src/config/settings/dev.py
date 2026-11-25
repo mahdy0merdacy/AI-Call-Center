@@ -1,4 +1,5 @@
 """Local development settings (docker compose)."""
+
 from pathlib import Path
 import environ
 

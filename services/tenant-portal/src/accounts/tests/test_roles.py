@@ -26,7 +26,9 @@ def tenant_admin_client():
         is_email_verified=True,
     )
     api = APIClient()
-    response = api.post("/api/auth/login/", {"email": EMAIL, "password": PASSWORD}, format="json")
+    response = api.post(
+        "/api/auth/login/", {"email": EMAIL, "password": PASSWORD}, format="json"
+    )
     assert response.status_code == 200
     api.credentials(HTTP_AUTHORIZATION=f"Bearer {response.json()['access_token']}")
     return api

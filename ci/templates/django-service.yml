@@ -1,0 +1,145 @@
+# Reusable jobs for a Django service (the auth service and the documents service).
+# Builds on ci/templates/python-service.yml, so a service's child pipeline needs only
+# this one include. The service keeps in its own file only what really differs:
+# its variables, its database for the tests, and the command that runs them.
+#
+# A service sets:
+#   SERVICE, SERVICE_DIR, APP_DIR, BUILD_CONTEXT   (see python-service.yml)
+#   BANDIT_EXCLUDE   paths Bandit skips (tests, migrations)
+#   COVERAGE_MIN     minimum test coverage in percent (the `tests` job enforces it)
+#
+# The pipeline every Django service gets:
+#
+#   verify ─► test ─► build ─► scan ─► publish (default branch only)
+#   lint, format,     tests,   image   scan-image,  publish-main
+#   dockerfile, sast, bandit
+#   deps-scan, iac
+#
+# Repo-wide checks (secret scan, MR title) run once at the root, not here.
+
+include:
+  - local: ci/templates/python-service.yml
+
+variables:
+  COVERAGE_MIN: "0"
+  BANDIT_EXCLUDE: "./venv"
+
+# ── verify ─────────────────────────────────────────────────────────────────────
+
+.django-lint:
+  extends: .py-lint
+
+.django-format:
+  extends: .py-format
+
+.django-dockerfile:
+  extends: .hadolint
+
+# SAST: Python, Django, hard-coded secrets and Dockerfile rules from the Semgrep
+# registry. A finding that is intentional is silenced on its own line with
+# `# nosemgrep: <rule>` and a reason, never by weakening the scan.
+.django-sast:
+  stage: verify
+  image: semgrep/semgrep:1.181.1
+  variables:
+    SEMGREP_SEND_METRICS: "off"
+  script:
+    # The semgrep image sets this and then insists the code is mounted at /src;
+    # in GitLab the code is in $CI_PROJECT_DIR, so turn the Docker special-case off.
+    - unset SEMGREP_IN_DOCKER
+    - cd "$SERVICE_DIR"
+    - semgrep scan --config p/python --config p/django --config p/secrets --config p/dockerfile
+      --exclude venv --exclude media --metrics=off --error
+      --junit-xml --output "$CI_PROJECT_DIR/semgrep-junit.xml"
+      || { semgrep scan --config p/python --config p/django --config p/secrets
+      --config p/dockerfile --exclude venv --exclude media --metrics=off --error; exit 1; }
+  artifacts:
+    when: always
+    reports:
+      junit: semgrep-junit.xml
+
+# Known vulnerabilities in the dependencies (requirements.txt is pinned exactly).
+# Fails on HIGH/CRITICAL that have a fix available; unfixable ones are reported only.
+.django-deps-scan:
+  stage: verify
+  image:
+    name: aquasec/trivy:0.65.0
+    entrypoint: [""]
+  variables:
+    TRIVY_CACHE_DIR: .trivycache
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    # Covers the whole run, DB download included (~130 MB; minutes on a slow link).
+    TRIVY_TIMEOUT: 15m
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    # Save even when the scan fails, or a timeout means re-downloading the DB on every
+    # retry, which times out again.
+    when: always
+  script:
+    # Absolute template path: "@contrib/..." is relative to the working directory, which
+    # in GitLab is the project folder, not the image root where the templates live.
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --format template --template "@/contrib/junit.tpl"
+      --output junit-trivy-deps.xml "$SERVICE_DIR/requirements.txt"
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+      --exit-code 1 --skip-db-update "$SERVICE_DIR/requirements.txt"
+  artifacts:
+    when: always
+    reports:
+      junit: junit-trivy-deps.xml
+
+# Misconfiguration in this service's own infrastructure files (Dockerfile, CI file).
+.django-iac:
+  stage: verify
+  image:
+    name: bridgecrew/checkov:3.3.30
+    entrypoint: [""]
+  script:
+    - checkov --directory "$SERVICE_DIR" --framework dockerfile gitlab_ci
+      --skip-path "$SERVICE_DIR/venv" --compact --quiet
+      --output cli --output junitxml --output-file-path console,"$CI_PROJECT_DIR/checkov-junit.xml"
+  artifacts:
+    when: always
+    reports:
+      junit: checkov-junit.xml
+
+# ── test ───────────────────────────────────────────────────────────────────────
+
+# Base for the service's `tests` job. The service adds its database (`services:`),
+# its environment (`variables:`) and the command that runs its tests (`script:`),
+# and should end that script with the two coverage lines shown here.
+.django-tests:
+  extends: .python
+  stage: test
+  coverage: '/^TOTAL.*\s+(\d+(?:\.\d+)?%)$/'
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [reports/]
+    reports:
+      # A service whose runner writes JUnit adds `junit: reports/report.xml` itself.
+      coverage_report:
+        coverage_format: cobertura
+        path: reports/coverage.xml
+
+# SAST with Bandit: one report format across the Django services.
+.django-bandit:
+  extends: .python
+  stage: test
+  script:
+    - mkdir -p "$CI_PROJECT_DIR/reports"
+    # Full report (all severities) kept as proof.
+    - bandit -r . -x "$BANDIT_EXCLUDE" -f json -o "$CI_PROJECT_DIR/reports/bandit-report.json" --exit-zero
+    # Medium/high findings as JUnit XML for the GitLab Tests tab.
+    - bandit -r . -x "$BANDIT_EXCLUDE" --severity-level medium -f xml
+      -o "$CI_PROJECT_DIR/reports/bandit-junit.xml" --exit-zero
+    # Human-readable result in the job log. Fails the job on medium/high findings.
+    - bandit -r . -x "$BANDIT_EXCLUDE" --severity-level medium
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [reports/]
+    reports:
+      junit: reports/bandit-junit.xml

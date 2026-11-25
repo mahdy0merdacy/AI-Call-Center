@@ -17,7 +17,12 @@ from accounts.serializers import (
 from accounts.services import registration
 from accounts.services.authentication import revoke_refresh_cookie
 from accounts.services.google import NoGoogleLogin, exchange_google_session
-from accounts.views.common import PublicAPIView, detail_response, get_refresh_cookie, token_response
+from accounts.views.common import (
+    PublicAPIView,
+    detail_response,
+    get_refresh_cookie,
+    token_response,
+)
 
 
 class GoogleExchangeView(PublicAPIView):
@@ -37,7 +42,9 @@ class GoogleExchangeView(PublicAPIView):
         try:
             _, pair = exchange_google_session(request._request)
         except NoGoogleLogin:
-            return detail_response("No Google login to exchange.", status.HTTP_401_UNAUTHORIZED)
+            return detail_response(
+                "No Google login to exchange.", status.HTTP_401_UNAUTHORIZED
+            )
         return token_response(pair)
 
 
@@ -58,7 +65,9 @@ class OnboardingView(APIView):
                 request.user, serializer.validated_data["company_name"]
             )
         except registration.OnboardingError:
-            return detail_response("Onboarding already completed.", status.HTTP_409_CONFLICT)
+            return detail_response(
+                "Onboarding already completed.", status.HTTP_409_CONFLICT
+            )
         # The old refresh token has tenant_id=null; retire it.
         revoke_refresh_cookie(get_refresh_cookie(request))
         return token_response(issue_token_pair(user), status.HTTP_201_CREATED)

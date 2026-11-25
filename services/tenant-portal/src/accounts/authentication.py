@@ -20,7 +20,9 @@ class PortalJWTAuthentication(JWTAuthentication):
         try:
             user_id = validated_token[api_settings.USER_ID_CLAIM]
         except KeyError as exc:
-            raise InvalidToken("Token contained no recognizable user identification") from exc
+            raise InvalidToken(
+                "Token contained no recognizable user identification"
+            ) from exc
         try:
             user = User.objects.select_related("tenant").get(pk=user_id)
         except (User.DoesNotExist, ValidationError) as exc:

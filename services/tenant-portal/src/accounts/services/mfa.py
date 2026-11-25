@@ -99,7 +99,9 @@ def regenerate_backup_codes(user: User) -> list[str]:
 
 
 def _new_backup_code() -> str:
-    raw = "".join(secrets.choice(BACKUP_CODE_ALPHABET) for _ in range(BACKUP_CODE_LENGTH))
+    raw = "".join(
+        secrets.choice(BACKUP_CODE_ALPHABET) for _ in range(BACKUP_CODE_LENGTH)
+    )
     return f"{raw[:5]}-{raw[5:]}"
 
 
@@ -122,7 +124,9 @@ def create_mfa_challenge(user: User) -> str:
         user=user, expires_at=timezone.now() + settings.MFA_TOKEN_TTL
     )
     return signing.dumps(
-        {"cid": str(challenge.pk), "uid": str(user.pk)}, salt=MFA_TOKEN_SALT, compress=True
+        {"cid": str(challenge.pk), "uid": str(user.pk)},
+        salt=MFA_TOKEN_SALT,
+        compress=True,
     )
 
 

@@ -132,7 +132,9 @@ PASSWORD_HASHERS = [
 ]
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {"min_length": 12},
@@ -183,7 +185,9 @@ REFRESH_COOKIE_DOMAIN = env("REFRESH_COOKIE_DOMAIN", default=None)
 # --- MFA (django-otp) -------------------------------------------------------
 
 MFA_ENCRYPTION_KEY = env("MFA_ENCRYPTION_KEY")
-MFA_REQUIRED_FOR_PLATFORM_ADMIN = env.bool("MFA_REQUIRED_FOR_PLATFORM_ADMIN", default=True)
+MFA_REQUIRED_FOR_PLATFORM_ADMIN = env.bool(
+    "MFA_REQUIRED_FOR_PLATFORM_ADMIN", default=True
+)
 MFA_TOKEN_TTL = timedelta(minutes=5)
 MFA_MAX_ATTEMPTS = 5
 MFA_BACKUP_CODE_COUNT = 10

@@ -1,5 +1,14 @@
-# Reusable jobs for a Python gRPC service. A service's child pipeline includes this
-# file, sets SERVICE and SERVICE_DIR, and `extends:` the hidden jobs it needs.
+# Reusable jobs for a Python service (gRPC or Django). A service's child pipeline
+# includes this file, sets SERVICE and SERVICE_DIR, and `extends:` the hidden jobs it
+# needs. Django services include ci/templates/django-service.yml, which builds on this.
+#
+# Per-service variables (defaults suit a service whose code sits in SERVICE_DIR):
+#   SERVICE        short name, used for the image name and cache key
+#   SERVICE_DIR    the service folder, e.g. services/orchestrator
+#   APP_DIR        folder holding the Python code, relative to SERVICE_DIR (default ".";
+#                  the auth service keeps its code in "src")
+#   BUILD_CONTEXT  Docker build context (default "." = repo root; Django services use
+#                  their own folder, so their Dockerfile copies paths relative to it)
 #
 # Contract with the parent pipeline (.gitlab-ci.yml), which passes these down:
 #   PARENT_PIPELINE_SOURCE   merge_request_event | push | web | ...
@@ -14,6 +23,8 @@ variables:
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
   PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  APP_DIR: "."
+  BUILD_CONTEXT: "."
 
 default:
   interruptible: true          # a newer push to the same MR cancels this run
@@ -30,6 +41,7 @@ default:
   before_script:
     - cd "$SERVICE_DIR"
     - pip install -q -r requirements-dev.txt
+    - cd "$APP_DIR"
 
 .py-lint:
   extends: .python
@@ -107,7 +119,7 @@ default:
       --label "org.opencontainers.image.created=$CI_PIPELINE_CREATED_AT"
       --tag "$IMAGE:$IMAGE_TAG"
       --push
-      .
+      "$BUILD_CONTEXT"
     - docker buildx imagetools inspect "$IMAGE:$IMAGE_TAG"
 
 # HIGH/CRITICAL vulnerabilities that have a fix available. Unfixable ones are
@@ -163,3 +175,29 @@ default:
     - docker buildx imagetools create --tag "$IMAGE:main" "$IMAGE:$IMAGE_TAG"
   rules:
     - if: $PARENT_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Software bill of materials (CycloneDX) of the exact image: what is inside it, kept as
+# a build artifact so a future advisory can be matched to the images that contain it.
+.sbom:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.65.0
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+    TRIVY_CACHE_DIR: .trivycache
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SKIP_VERSION_CHECK: "true"
+    TRIVY_TIMEOUT: 15m
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    when: always
+  script:
+    - trivy image --format cyclonedx --output sbom.cdx.json "$IMAGE:$IMAGE_TAG"
+  artifacts:
+    name: sbom-$SERVICE-$IMAGE_TAG
+    expire_in: 1 year
+    paths: [sbom.cdx.json]

@@ -14,7 +14,9 @@ def health(request: HttpRequest) -> JsonResponse:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
     except DatabaseError:
-        return JsonResponse({"status": "unhealthy", "database": "unavailable"}, status=503)
+        return JsonResponse(
+            {"status": "unhealthy", "database": "unavailable"}, status=503
+        )
     return JsonResponse({"status": "ok", "database": "ok"})
 
 

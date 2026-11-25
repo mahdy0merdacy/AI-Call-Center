@@ -31,7 +31,9 @@ def _write_ephemeral_keys() -> tuple[str, str]:
     return str(private_path), str(public_path)
 
 
-os.environ["JWT_PRIVATE_KEY_PATH"], os.environ["JWT_PUBLIC_KEY_PATH"] = _write_ephemeral_keys()
+os.environ["JWT_PRIVATE_KEY_PATH"], os.environ["JWT_PUBLIC_KEY_PATH"] = (
+    _write_ephemeral_keys()
+)
 os.environ["DJANGO_SECRET_KEY"] = secrets.token_urlsafe(50)
 os.environ["MFA_ENCRYPTION_KEY"] = base64.b64encode(secrets.token_bytes(32)).decode()
 os.environ["GOOGLE_CLIENT_ID"] = "test-client-id.apps.googleusercontent.com"
