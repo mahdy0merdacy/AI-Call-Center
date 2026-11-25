@@ -1,0 +1,6 @@
+# Used instead of a root .dockerignore when building with this Dockerfile.
+# Allowlist: the build context is the whole repo, so send only what the image needs.
+*
+!services/stt/requirements.txt
+!services/stt/app
+**/__pycache__

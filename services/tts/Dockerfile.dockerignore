@@ -1,0 +1,3 @@
+# Used instead of a root .dockerignore when building with this Dockerfile.
+# The image contains no repo files at all: everything comes from the NVIDIA release.
+*

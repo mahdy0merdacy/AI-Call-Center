@@ -1,0 +1,80 @@
+# The voice pipeline as containers, on one machine. The step between "five
+# terminals" (RUNNING.md) and k3s: same images, same flags, no cluster.
+#
+#   docker compose -f services/docker-compose.yml up --build
+#   then open http://localhost:8082
+#
+# Everything runs on the HOST network and binds 127.0.0.1:
+#   * the edge must be on the host network anyway: WebRTC media is UDP on ports
+#     picked per call, which a port mapping cannot cover (in k3s: hostNetwork);
+#   * the others then reach each other on localhost with the RUNNING.md ports,
+#     and binding 127.0.0.1 keeps all of it off the LAN.
+# In k3s only the edge keeps host networking; the rest become ClusterIP Services.
+#
+# GPU services need the NVIDIA Container Toolkit on the host (`gpus: all`).
+# Models are mounted from the host caches the local setup already filled.
+
+name: aicc-voice
+
+x-service: &service
+  network_mode: host
+  restart: unless-stopped
+  init: false            # each image's ENTRYPOINT is exec-form: the server is PID 1
+
+services:
+  mcp-acme:
+    <<: *service
+    build: {context: .., dockerfile: services/mcp-servers/Dockerfile}
+    image: aicc/mcp-servers:dev
+    command: [acme_delivery.py, --host, 127.0.0.1, --port, "9101"]
+    mem_limit: 256m
+
+  mcp-swiftnet:
+    <<: *service
+    image: aicc/mcp-servers:dev
+    command: [swiftnet_isp.py, --host, 127.0.0.1, --port, "9102"]
+    depends_on: [mcp-acme]           # only so the shared image is built once
+    mem_limit: 256m
+
+  orchestrator:
+    <<: *service
+    build: {context: .., dockerfile: services/orchestrator/Dockerfile}
+    image: aicc/orchestrator:dev
+    command: [--host, 127.0.0.1, --port, "50052"]
+    env_file: [../.env]              # GROQ_API_KEY
+    mem_limit: 512m
+
+  stt:
+    <<: *service
+    build: {context: .., dockerfile: services/stt/Dockerfile}
+    image: aicc/stt:dev
+    command: [--host, 127.0.0.1, --port, "50051", --model-path, /models/whisper/small.pt]
+    volumes: ["${HOME}/.cache/whisper:/models/whisper:ro,z"]
+    gpus: all
+    mem_limit: 6g
+    stop_grace_period: 30s           # drains open streams before exiting
+
+  tts:
+    <<: *service
+    build: {context: .., dockerfile: services/tts/Dockerfile}
+    image: aicc/tts:dev
+    command: [serve, --host, 127.0.0.1, --port, "8083", --no-ui,
+              --tts-model, nvidia/magpie_tts_multilingual_357m,
+              --codec-model, nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps,
+              --device, cuda]
+    volumes: ["${HOME}/.cache/nemo-speech/models:/models/nemo-speech:z"]
+    # nemo-speech writes a .lock beside each model, and this cache belongs to you,
+    # not the image's uid 10001. In k3s an init container fills the cache as 10001.
+    user: "${AICC_UID:-1000}:${AICC_GID:-1000}"
+    gpus: all
+    mem_limit: 3g
+
+  media-edge:
+    <<: *service
+    build: {context: .., dockerfile: services/media-edge/Dockerfile}
+    image: aicc/media-edge:dev
+    command: [--host, 127.0.0.1, --port, "8082",
+              --stt, 127.0.0.1:50051, --orchestrator, 127.0.0.1:50052,
+              --tts, http://127.0.0.1:8083]
+    depends_on: [orchestrator, stt, tts, mcp-acme, mcp-swiftnet]
+    mem_limit: 512m
