@@ -5,5 +5,7 @@
 !services/orchestrator/app
 !services/orchestrator/gen
 !tenants
+!libs/aicc_events
+libs/aicc_events/tests
 **/__pycache__
 tenants/validate.py
