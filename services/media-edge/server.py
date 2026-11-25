@@ -68,6 +68,7 @@ class Call:
         self.pc = pc
         self.cfg = cfg
         self.channel = None
+        self.pending: list[str | bytes] = []    # sent before the channel opened
         self.audio_q: asyncio.Queue = asyncio.Queue(maxsize=200)
         self.events_q: asyncio.Queue = asyncio.Queue()
         self.frames = 0
@@ -80,20 +81,44 @@ class Call:
         self.t_final: float | None = None
 
     # -- browser ----------------------------------------------------------
+    #
+    # The orchestrator's Ready (the "tenant" message) and the first greeting
+    # clause can arrive before the browser's data channel has opened: the call
+    # starts on the audio track, and SCTP comes up a moment later. Sent then, they
+    # were dropped and the page never learned which client it was talking to.
+    # Messages are held until the channel opens, then flushed in order.
+
+    PENDING_MAX = 64            # a greeting is a handful of messages; bound a stall
+
+    def attach(self, channel):
+        self.channel = channel
+        if channel.readyState == "open":
+            self._flush()
+        else:
+            channel.on("open", self._flush)
+
+    def _flush(self):
+        pending, self.pending = self.pending, []
+        for item in pending:
+            self._deliver(item)
+
+    def _deliver(self, item):
+        try:
+            self.channel.send(item)
+        except Exception as exc:
+            log.warning("data channel send failed: %s", exc)
+
+    def _send(self, item):
+        if self.channel and self.channel.readyState == "open":
+            self._deliver(item)
+        elif not self.closed and len(self.pending) < self.PENDING_MAX:
+            self.pending.append(item)
 
     def send(self, payload: dict):
-        if self.channel and self.channel.readyState == "open":
-            try:
-                self.channel.send(json.dumps(payload))
-            except Exception as exc:
-                log.warning("data channel send failed: %s", exc)
+        self._send(json.dumps(payload))
 
     def send_audio(self, wav: bytes):
-        if self.channel and self.channel.readyState == "open":
-            try:
-                self.channel.send(wav)
-            except Exception as exc:
-                log.warning("audio send failed: %s", exc)
+        self._send(wav)
 
     # -- audio in ---------------------------------------------------------
 
@@ -286,8 +311,9 @@ async def offer(request):
 
     @pc.on("datachannel")
     def on_datachannel(channel):
-        call.channel = channel
-        log.info("data channel open")
+        waiting = len(call.pending)
+        call.attach(channel)
+        log.info("data channel open (%d message(s) were waiting)", waiting)
 
     @pc.on("connectionstatechange")
     async def on_state():
