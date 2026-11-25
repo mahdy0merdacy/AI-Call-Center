@@ -216,8 +216,30 @@ class Call:
                 return
             yield ev
 
+    # A call the orchestrator refuses before it has started (UNAVAILABLE: it is
+    # draining for a rollout, or Postgres is briefly unreachable) is retried on a
+    # fresh channel, which on k3s lands on another replica. Delays in seconds.
+    START_RETRIES = (0.5, 1.5)
+
     async def run_orchestrator(self, target: str, slug: str, tts_url: str):
         """Directives in, speech out. No audio crosses this stream."""
+        for attempt, delay in enumerate((0.0, *self.START_RETRIES)):
+            if delay:
+                await asyncio.sleep(delay)
+            if self.closed:
+                break
+            started = await self._session_once(target, slug, tts_url,
+                                               last_try=attempt == len(self.START_RETRIES))
+            if started is not False:
+                break
+            log.info("orchestrator unavailable before the call started — retrying")
+        self.send({"type": "closed"})
+        await self.end()
+
+    async def _session_once(self, target: str, slug: str, tts_url: str,
+                            last_try: bool) -> bool | None:
+        """One Session stream. False = refused before any directive (retryable)."""
+        got_directive = False
         async with grpc.aio.insecure_channel(target, options=[
             ("grpc.keepalive_time_ms", 20000),
             ("grpc.keepalive_permit_without_calls", 1)]) as ch:
@@ -225,13 +247,36 @@ class Call:
             async with aiohttp.ClientSession() as http:
                 try:
                     async for d in stub.Session(self._orch_events(slug)):
+                        got_directive = True
                         await self._apply(d, http, tts_url)
                 except grpc.aio.AioRpcError as e:
+                    if (e.code() == grpc.StatusCode.UNAVAILABLE and not got_directive
+                            and not last_try):
+                        return False
                     log.error("orchestrator stream failed: %s %s",
                               e.code().name, e.details())
                     self.send({"type": "error", "code": e.code().name,
                                "detail": e.details() or ""})
-        self.send({"type": "closed"})
+        return got_directive
+
+    async def end(self):
+        """The orchestrator side is over, so the call is: without it nobody answers.
+
+        Stops STT and closes the peer connection, after giving the last spoken
+        reply (already queued on the data channel) a moment to reach the browser.
+        """
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            self.audio_q.put_nowait(None)        # ends the STT stream
+        except asyncio.QueueFull:
+            pass
+        for _ in range(30):                      # at most 3 s for queued audio
+            if not self.channel or self.channel.bufferedAmount == 0:
+                break
+            await asyncio.sleep(0.1)
+        await self.pc.close()
 
     async def _apply(self, d, http, tts_url: str):
         kind = d.WhichOneof("directive")
