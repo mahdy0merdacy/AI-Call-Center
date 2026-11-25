@@ -33,6 +33,17 @@
   #state.err { color:var(--err); }
   meter { width:6.5rem; height:8px; }
 
+  .client label { font-size:.75rem; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
+  select { font:inherit; padding:.45rem .6rem; border-radius:.45rem; border:1px solid var(--line);
+           background:var(--bg); color:var(--fg); min-width:14rem; max-width:100%; }
+  .badge { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; line-height:1.6;
+           padding:0 .5rem; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
+  .badge.platform { color:var(--accent); border-color:var(--accent); }
+  .docs { font-size:.85rem; color:var(--dim); }
+  .note { margin:-.4rem 0 1rem; font-size:.85rem; color:var(--dim); }
+  .note.err { color:var(--err); }
+  .note button { margin-left:.5rem; padding:.1rem .7rem; font-size:.8rem; }
+
   .panel { border:1px solid var(--line); border-radius:.55rem; padding:1rem 1.15rem;
            background:var(--panel); }
   #transcript { min-height:8.5rem; font-size:1.05rem; line-height:1.75; }
@@ -68,6 +79,14 @@
 <h1>Media edge → STT <span id="who" hidden style="font-weight:400;font-size:.8em;color:var(--dim)"></span></h1>
 <p class="sub">Mic → WebRTC → STT → LLM → TTS → back to your speakers. Talk, pause, and the
 agent replies out loud.</p>
+
+<div class="bar client">
+  <label for="client">Client</label>
+  <select id="client" disabled><option value="">Loading clients…</option></select>
+  <span id="client-badge" class="badge" hidden></span>
+  <span id="client-docs" class="docs" hidden></span>
+</div>
+<p id="client-msg" class="note" hidden></p>
 
 <div class="bar">
   <button id="start" class="primary">Start mic</button>
@@ -109,6 +128,7 @@ const TENANT_SLUG = (location.pathname.match(/^\/w\/([\w-]+)/) || [])[1] || null
 const t0 = performance.now();
 let pc, stream, audioCtx, rafId, chan, tStart = null, firstAt = null, utts = 0, words = 0;
 let playCtx = null, playHead = 0, playing = [], replyEl = null;
+let inCall = false, clientsReady = false;
 
 // Sequential gapless-ish playback. Each binary frame is one clause of WAV, and
 // they arrive in order, so schedule each to start when the previous one ends.
@@ -273,7 +293,93 @@ function onMessage(ev) {
   }
 }
 
+// Client picker. /w/<slug> stays the source of truth: choosing a client navigates
+// there, so a direct link, a reload and the picker always agree.
+const SOURCE_LABEL = { test: 'Test tenants', platform: 'Platform clients' };
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// Switching clients reloads the page, which would cut a live call.
+function syncPicker() { $('client').disabled = inCall || !clientsReady; }
+
+function clientNote(text, err) {
+  const n = $('client-msg');
+  n.textContent = text;
+  n.className = err ? 'note err' : 'note';
+  n.hidden = !text;
+  return n;
+}
+
+function showClient(t) {
+  $('client-badge').hidden = !t;
+  // Test tenants answer from tenants/*.yaml; a document count only means
+  // something for platform clients, whose agent answers from their uploads.
+  $('client-docs').hidden = !t || t.source !== 'platform';
+  if (!t) return;
+  $('client-badge').textContent = t.source;
+  $('client-badge').className = `badge ${t.source}`;
+  $('client-docs').textContent = plural(t.documents, 'document');
+}
+
+async function loadClients() {
+  const sel = $('client');
+  clientsReady = false; syncPicker();
+  let tenants;
+  try {
+    const res = await fetch('/tenants', { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    tenants = body.tenants || [];
+  } catch (err) {
+    sel.replaceChildren(new Option(TENANT_SLUG || 'No client list', TENANT_SLUG || ''));
+    showClient(null);
+    const retry = document.createElement('button');
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', loadClients);
+    clientNote(`Couldn't load the client list (${err.message}). ` + (TENANT_SLUG
+      ? `You can still call “${TENANT_SLUG}”.`
+      : 'Retry, or open /w/<slug> directly.'), true).append(retry);
+    return;
+  }
+
+  const groups = new Map();   // keeps the orchestrator's order: test first, then by name
+  for (const t of tenants) {
+    if (!groups.has(t.source)) groups.set(t.source, []);
+    groups.get(t.source).push(t);
+  }
+  const placeholder = new Option(tenants.length ? 'Choose a client…' : 'No clients yet', '');
+  placeholder.disabled = true;
+  const items = [placeholder];
+  for (const [source, list] of groups) {
+    const g = document.createElement('optgroup');
+    g.label = SOURCE_LABEL[source] || source;
+    for (const t of list) {
+      const name = t.display_name ? `${t.display_name} (${t.slug})` : t.slug;
+      const docs = t.source === 'platform' ? ` · ${plural(t.documents, 'doc')}` : '';
+      g.append(new Option(name + docs, t.slug));
+    }
+    items.push(g);
+  }
+  const current = tenants.find(t => t.slug === TENANT_SLUG);
+  if (TENANT_SLUG && !current) items.push(new Option(`${TENANT_SLUG} (not listed)`, TENANT_SLUG));
+  sel.replaceChildren(...items);
+  sel.value = TENANT_SLUG || '';
+  showClient(current);
+  clientsReady = true; syncPicker();
+
+  if (!TENANT_SLUG) {
+    clientNote(tenants.length ? 'Choose a client to start a call.'
+      : 'No clients yet: add a tenants/*.yaml, or sign one up in the portal.');
+    sel.focus();
+  } else if (!current) {
+    clientNote(`“${TENANT_SLUG}” is not in the client list: the orchestrator will refuse the call.`, true);
+  } else {
+    clientNote('');
+  }
+}
+
 async function start() {
+  if (!TENANT_SLUG) return;   // the page makes the client choice explicit
+  inCall = true; syncPicker();
   $('start').disabled = true;
   $('state').textContent = 'starting'; $('state').className = '';
   $('transcript').textContent = ''; $('partial').textContent = '';
@@ -309,7 +415,8 @@ async function start() {
   } catch (err) {
     log(`ERROR: ${err.message}`, true);
     $('state').textContent = 'failed'; $('state').className = 'err';
-    $('start').disabled = false;
+    $('start').disabled = !TENANT_SLUG;
+    inCall = false; syncPicker();
   }
 }
 
@@ -321,15 +428,33 @@ function stop() {
   if (stream) stream.getTracks().forEach(t => t.stop());
   setTimeout(() => pc && pc.close(), 1500);   // let the tail flush back
   $('state').textContent = 'stopped'; $('state').className = '';
-  $('start').disabled = false;
+  $('start').disabled = !TENANT_SLUG;
+  inCall = false; syncPicker();
 }
 
 $('start').addEventListener('click', start);
 $('stop').addEventListener('click', stop);
+// Keep the query string: /?autostart&stopafter=20 picks up again on /w/<slug>.
+$('client').addEventListener('change', e => {
+  const slug = e.target.value;
+  if (slug && slug !== TENANT_SLUG) location.assign(`/w/${encodeURIComponent(slug)}${location.search}`);
+});
+// Back restores this page from the bfcache with the old choice still selected,
+// and choosing it again would fire no change event: reload the list instead.
+addEventListener('pageshow', e => { if (e.persisted) loadClients(); });
+
+// At / there is no client yet. The server still falls back to its default
+// tenant for API callers, but a person picks one explicitly.
+if (!TENANT_SLUG) { $('start').disabled = true; $('start').title = 'Choose a client first'; }
+loadClients();
 
 const qs = new URLSearchParams(location.search);
-if (qs.has('autostart')) start();
-if (qs.has('stopafter')) setTimeout(stop, parseFloat(qs.get('stopafter')) * 1000);
+if (TENANT_SLUG) {
+  if (qs.has('autostart')) start();
+  if (qs.has('stopafter')) setTimeout(stop, parseFloat(qs.get('stopafter')) * 1000);
+} else if (qs.has('autostart')) {
+  log('autostart waits for a client: choose one above');
+}
 </script>
 </body>
 </html>
