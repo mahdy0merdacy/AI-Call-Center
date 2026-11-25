@@ -17,6 +17,7 @@ import { useCurrentTenant } from '@/features/auth/hooks/useCurrentUser';
 import { useSession } from '@/features/auth/session/SessionProvider';
 import { messages } from '@/i18n';
 import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
+import { TestAgentCard } from '../components/TestAgentCard';
 
 const t = messages.dashboard;
 
@@ -41,6 +42,7 @@ export function DashboardPage() {
   };
 
   const displayName = user.full_name || user.email;
+  const tenantSlug = tenant.data?.slug ?? user.tenant_slug;
   useDocumentTitle(messages.nav.dashboard);
 
   return (
@@ -56,6 +58,13 @@ export function DashboardPage() {
               <WaveformVisual bars={72} intensity={0.9} />
             </div>
           </StaggerItem>
+
+          {/* Platform admins have no agent of their own to call. */}
+          {user.tenant_id !== null && (
+            <StaggerItem>
+              <TestAgentCard slug={tenantSlug} loading={tenantSlug === null && tenant.isPending} />
+            </StaggerItem>
+          )}
 
           <StaggerItem>
             <Card>

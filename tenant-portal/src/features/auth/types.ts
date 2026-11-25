@@ -48,6 +48,7 @@ export const currentUserSchema = meResponseSchema.transform((user: MeResponse) =
   is_email_verified: user.email_verified,
   tenant_id: user.tenant?.id ?? null,
   tenant_name: user.tenant?.name ?? null,
+  tenant_slug: user.tenant?.slug ?? null,
   mfa_enabled: user.mfa_enabled,
   auth_provider: user.auth_provider ?? ('password' as const),
   date_joined: user.date_joined,

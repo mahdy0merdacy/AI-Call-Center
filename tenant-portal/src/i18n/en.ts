@@ -164,6 +164,15 @@ export const en = {
     disabled: 'Off',
     signOut: 'Sign out',
     signingOut: 'Signing out',
+    testAgent: {
+      title: 'Test your agent',
+      description: 'Call your AI agent from your browser and hear how it answers your customers.',
+      slugLabel: 'Workspace address',
+      open: 'Call your agent',
+      newTab: '(opens in a new tab)',
+      notConfigured: 'The voice test page isn’t available on this portal yet.',
+      noSlug: 'We couldn’t load your workspace address. Reload the page to try again.',
+    },
   },
   suspended: {
     title: 'Account suspended',

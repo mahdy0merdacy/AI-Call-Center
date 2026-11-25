@@ -352,7 +352,7 @@ src/
     motion/       Stagger, PageTransition, useShake
   features/
     auth/         api, components, hooks, mfa, pages, schemas, session, types
-    dashboard/    placeholder dashboard (out of scope; exercises the flow)
+    dashboard/    placeholder dashboard (exercises the flow) + "Test your agent" card
     documents/    documents page: upload, table, session links (documents service)
     profile/      account settings: profile, security, session (proposed API)
     system/       global screens (404, 403, suspended)

@@ -169,6 +169,15 @@ export const fr: Messages = {
     disabled: 'Désactivée',
     signOut: 'Se déconnecter',
     signingOut: 'Déconnexion en cours',
+    testAgent: {
+      title: 'Testez votre agent',
+      description: 'Appelez votre agent IA depuis votre navigateur pour entendre comment il répond à vos clients.',
+      slugLabel: 'Adresse de l’espace',
+      open: 'Appeler votre agent',
+      newTab: '(s’ouvre dans un nouvel onglet)',
+      notConfigured: 'La page de test vocal n’est pas encore disponible sur ce portail.',
+      noSlug: 'Impossible de charger l’adresse de votre espace. Rechargez la page pour réessayer.',
+    },
   },
   suspended: {
     title: 'Compte suspendu',
