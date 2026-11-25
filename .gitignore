@@ -24,6 +24,12 @@ chrome-profile-*/
 # Data stack overrides (passwords, pepper)
 data/.env
 
+# Core stack (deploy/compose.yaml): secrets and JWT keys from scripts/core-setup.sh,
+# and the copies its --force sets aside
+deploy/.env
+deploy/keys/
+deploy/.backup/
+
 #documentation
 *.md
 !README.md
