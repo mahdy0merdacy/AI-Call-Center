@@ -3,8 +3,8 @@
 # services'. No Spark here: Delta tables are read with delta-rs.
 great_expectations==1.25.0
 deltalake==1.7.0
-pandas
-pyarrow
-protobuf           # reads data/gen/events.desc: event types, enums, (pii) options
-PyYAML             # reads tenants/*.yaml: the known tenant ids
-psycopg[binary]>=3.2      # writes check results to Postgres for Grafana
+pandas==3.1.1
+pyarrow==26.0.1
+protobuf==7.36.2   # reads data/gen/events.desc: event types, enums, (pii) options
+PyYAML==6.0.4      # reads tenants/*.yaml: the known tenant ids
+psycopg[binary]==3.3.9    # writes check results to Postgres for Grafana
