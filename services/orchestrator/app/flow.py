@@ -248,12 +248,24 @@ def load_tenants(directory: Path = TENANTS_DIR) -> dict[str, Tenant]:
     return tenants
 
 
+ROUTE_THRESHOLD = 0.4
+
+
 def route(tenant: Tenant, utterance: str) -> Flow | None:
     """Pick a flow by keyword overlap with its example utterances.
 
     Deliberately cheap — no embedding, no LLM classification call, because either
     would add latency to every single turn. Good enough for two flows per tenant;
     a real deployment wants a proper intent classifier, and that is a known gap.
+    """
+    return route_scored(tenant, utterance)[0]
+
+
+def route_scored(tenant: Tenant, utterance: str) -> tuple[Flow | None, float]:
+    """route(), plus the best overlap score even when it falls below the threshold.
+
+    The score is recorded on every turn: near-misses are exactly the labelled
+    examples a future intent classifier needs.
     """
     words = set(re.findall(r"\w+", utterance.lower()))
     best, best_score = None, 0.0
@@ -267,7 +279,18 @@ def route(tenant: Tenant, utterance: str) -> Flow | None:
             score = len(words & ex_words) / len(ex_words)
             if score > best_score:
                 best, best_score = f, score
-    return best if best_score >= 0.4 else None
+    return (best if best_score >= ROUTE_THRESHOLD else None), best_score
+
+
+@dataclass
+class SlotOutcome:
+    """What happened to the caller's answer to a slot prompt, for the event log."""
+    slot: str
+    ok: bool
+    attempt: int                    # 1 = first try
+    max_attempts: int
+    value: str = ""                 # set when ok
+    utterance: str = ""             # set when rejected
 
 
 @dataclass
@@ -280,6 +303,8 @@ class TurnAction:
     data: dict = field(default_factory=dict)
     guidance: str = ""
     next_silence_ms: int | None = None
+    next_slot: str = ""             # the slot that next_silence_ms is for
+    slot_outcome: SlotOutcome | None = None
 
 
 class CallFlowState:
@@ -312,7 +337,7 @@ class CallFlowState:
         slot = self._pending_slot()
         if slot:
             return TurnAction(kind="say", text=slot.prompt, flow=flow,
-                              next_silence_ms=slot.silence_ms)
+                              next_silence_ms=slot.silence_ms, next_slot=slot.name)
         return TurnAction(kind="ready_for_tool", flow=flow)
 
     def advance(self, utterance: str) -> TurnAction:
@@ -321,24 +346,30 @@ class CallFlowState:
         if slot is None:
             return TurnAction(kind="ready_for_tool", flow=self.active)
 
+        attempt = self.attempts.get(slot.name, 0) + 1
         value = slot.extract(utterance)
         if value:
             self.filled[slot.name] = value
             log.info("slot %s filled: %r", slot.name, value)
+            filled = SlotOutcome(slot=slot.name, ok=True, attempt=attempt,
+                                 max_attempts=slot.max_attempts, value=value)
             nxt = self._pending_slot()
             if nxt:
                 return TurnAction(kind="say", text=nxt.prompt, flow=self.active,
-                                  next_silence_ms=nxt.silence_ms)
-            return TurnAction(kind="ready_for_tool", flow=self.active)
+                                  next_silence_ms=nxt.silence_ms, next_slot=nxt.name,
+                                  slot_outcome=filled)
+            return TurnAction(kind="ready_for_tool", flow=self.active, slot_outcome=filled)
 
         # Invalid. Count it, and give up rather than loop forever.
-        n = self.attempts.get(slot.name, 0) + 1
-        self.attempts[slot.name] = n
+        self.attempts[slot.name] = attempt
         log.info("slot %s attempt %d/%d failed on %r",
-                 slot.name, n, slot.max_attempts, utterance[:40])
-        if n >= slot.max_attempts:
-            return TurnAction(kind="escalate", flow=self.active,
+                 slot.name, attempt, slot.max_attempts, utterance[:40])
+        rejected = SlotOutcome(slot=slot.name, ok=False, attempt=attempt,
+                               max_attempts=slot.max_attempts, utterance=utterance)
+        if attempt >= slot.max_attempts:
+            return TurnAction(kind="escalate", flow=self.active, slot_outcome=rejected,
                               text=self.tenant.escalation.get(
                                   "message", "Let me put you through to someone."))
         return TurnAction(kind="say", text=slot.on_invalid or slot.reprompt,
-                          flow=self.active, next_silence_ms=slot.silence_ms)
+                          flow=self.active, next_silence_ms=slot.silence_ms,
+                          next_slot=slot.name, slot_outcome=rejected)

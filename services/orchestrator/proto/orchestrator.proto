@@ -40,6 +40,10 @@ message StartCall {
   string tenant_slug = 1;
   string call_id = 2;
   string caller_ref = 3;      // optional, e.g. a signed token from Django
+  // Recorded on the CallStarted event. Every metric must be filterable on
+  // `synthetic`, or a load test silently becomes "escalations doubled".
+  bool synthetic = 4;         // simulator traffic, not a real caller
+  string channel = 5;         // webrtc | simulator; empty = unknown
 }
 
 message Transcript {

@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from mcp import ClientSession
@@ -46,6 +47,14 @@ def _payload(res) -> dict[str, Any]:
     return {}
 
 
+@dataclass
+class ToolCall:
+    """A tool's result plus what the event log needs to know about the call."""
+    result: dict[str, Any]
+    latency_ms: int
+    timed_out: bool = False
+
+
 class ToolRegistry:
     """Per-tenant MCP endpoints and the allowlist that guards them."""
 
@@ -56,27 +65,36 @@ class ToolRegistry:
         self.allowed = allowed
 
     async def call(self, tool: str, args: dict, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+        return (await self.invoke(tool, args, timeout_s)).result
+
+    async def invoke(self, tool: str, args: dict,
+                     timeout_s: float = DEFAULT_TIMEOUT_S) -> ToolCall:
         if tool not in self.allowed:
             # A tool absent from the tenant's allowlist must fail closed, loudly.
             log.error("tool %r not in tenant allowlist", tool)
-            return {"outcome": "error", "reason": "not_permitted"}
+            return ToolCall({"outcome": "error", "reason": "not_permitted"}, latency_ms=0)
 
         url = self.servers.get(tool)
         if not url:
             log.error("no MCP endpoint configured for %r", tool)
-            return {"outcome": "error", "reason": "no_endpoint"}
+            return ToolCall({"outcome": "error", "reason": "no_endpoint"}, latency_ms=0)
 
         t0 = time.perf_counter()
+
+        def elapsed_ms() -> int:
+            return int((time.perf_counter() - t0) * 1000)
+
         try:
-            return await asyncio.wait_for(self._invoke(url, tool, args), timeout=timeout_s)
+            result = await asyncio.wait_for(self._invoke(url, tool, args), timeout=timeout_s)
+            call = ToolCall(result, elapsed_ms())
         except TimeoutError:
             log.warning("tool %s timed out after %.1fs", tool, timeout_s)
-            return {"outcome": "timeout"}
+            call = ToolCall({"outcome": "timeout"}, elapsed_ms(), timed_out=True)
         except Exception as exc:
             log.exception("tool %s failed", tool)
-            return {"outcome": "error", "reason": type(exc).__name__}
-        finally:
-            log.info("tool %s took %.0f ms", tool, (time.perf_counter() - t0) * 1000)
+            call = ToolCall({"outcome": "error", "reason": type(exc).__name__}, elapsed_ms())
+        log.info("tool %s took %d ms", tool, call.latency_ms)
+        return call
 
     @staticmethod
     async def _invoke(url: str, tool: str, args: dict) -> dict:

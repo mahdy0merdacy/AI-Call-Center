@@ -22,6 +22,6 @@ module = ["gen.*"]
 ignore_errors = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
+testpaths = ["tests", "../../libs/aicc_events/tests"]
+pythonpath = [".", "../../libs"]
 addopts = "-ra --strict-markers"
