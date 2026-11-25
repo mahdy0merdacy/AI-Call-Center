@@ -2,10 +2,15 @@
 #   docker build -f services/media-edge/Dockerfile -t media-edge .
 #
 # WebRTC: audio arrives as UDP straight from the caller's browser, on ports the
-# edge picks per call during ICE. Publishing one TCP port does not cover that, so
-# run the container on the HOST network (docker --network host; in k8s,
-# hostNetwork: true with dnsPolicy: ClusterFirstWithHostNet) and the browser
-# gets candidates on the node's real addresses, Tailscale included.
+# edge picks per call during ICE, addressed to the edge's own interface addresses.
+# Publishing one TCP port does not cover that, so the browser must be able to
+# route to those addresses:
+#   * a browser on the same Linux machine: a bridge network is enough, because
+#     the host routes to its containers' addresses; publish 8082 for the page
+#     and signalling only;
+#   * reached from other machines: run on the HOST network (docker --network
+#     host; in k8s, hostNetwork: true with dnsPolicy: ClusterFirstWithHostNet) so
+#     the candidates are the node's real addresses, Tailscale included.
 #
 # Browsers only allow the microphone on a secure origin: http://localhost works,
 # http://<another machine's IP> does not. Reaching the edge from another machine
@@ -36,9 +41,8 @@ USER 10001
 EXPOSE 8082
 
 # Exec form so python is PID 1 and gets SIGTERM; aiohttp then closes open calls.
-# Upstream addresses are flags: k8s Service names in the cluster, localhost on a
-# single machine with host networking.
+# Upstreams come from the environment: STT_ADDR, ORCHESTRATOR_ADDR, TTS_URL (and
+# DEFAULT_TENANT, PORT), set to service names on the compose network or in the
+# cluster. Unset, they are the 127.0.0.1 ports of a single host-network machine.
 ENTRYPOINT ["python", "server.py"]
-CMD ["--host", "0.0.0.0", "--port", "8082", \
-     "--stt", "127.0.0.1:50051", "--orchestrator", "127.0.0.1:50052", \
-     "--tts", "http://127.0.0.1:8083"]
+CMD ["--host", "0.0.0.0"]

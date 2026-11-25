@@ -1,0 +1,30 @@
+# Tooling config for the media edge. Not a package: the service runs as
+# `python server.py`, and the image installs requirements.txt.
+# Same rules as the orchestrator so CI treats both the same way.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["gen"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, warnings, import order, bugbear, pyupgrade, async pitfalls
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+exclude = ["^gen/"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["gen.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+# server.py keeps its settings under plain string app keys; aiohttp suggests
+# typed AppKeys, once per key and per app the tests build. Noise, not a fault.
+filterwarnings = ["ignore::aiohttp.web_exceptions.NotAppKeyWarning"]

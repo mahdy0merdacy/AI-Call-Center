@@ -1,0 +1,7 @@
+# CI and local checks. Not installed in the image.
+# Tests drive the aiohttp app with aiohttp.test_utils under asyncio.run, like the
+# orchestrator's tests, so no pytest async plugin is needed.
+-r requirements.txt
+pytest==9.1.1
+ruff==0.17.1
+mypy==2.4.0

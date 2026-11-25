@@ -15,6 +15,10 @@ lived here, every prompt change redeployed the component carrying live calls.
 
     python server.py --port 8082 --stt 127.0.0.1:50051 \\
         --orchestrator 127.0.0.1:50052 --tts http://127.0.0.1:8083
+
+The address and tenant flags default to environment variables (HOST, PORT,
+STT_ADDR, ORCHESTRATOR_ADDR, TTS_URL, DEFAULT_TENANT). Containers are configured
+by those alone, with service names, so the same image runs in compose and in k8s.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -44,6 +49,9 @@ from gen import stt_pb2, stt_pb2_grpc  # noqa: E402
 
 STATIC = HERE / "static"
 TARGET_RATE = 16000
+# The client picker loads once per page view: a slow orchestrator gets a quick
+# 503 the page can show, not a hung request.
+LIST_TENANTS_TIMEOUT_S = 2.0
 
 log = logging.getLogger("edge")
 
@@ -314,6 +322,30 @@ async def widget(request):
     return web.FileResponse(STATIC / "index.html")
 
 
+async def tenants(request):
+    """Who can be called: the test tenants and the platform's active clients.
+
+    The orchestrator owns tenant resolution; the edge only relays its list. A
+    channel per request, like a channel per call: the name is resolved afresh,
+    so an orchestrator restarted at a new address is found on the next page load
+    instead of after a stale channel's reconnect backoff."""
+    target = request.app["orch_target"]
+    try:
+        async with grpc.aio.insecure_channel(target) as ch:
+            resp = await ob_grpc.OrchestratorStub(ch).ListTenants(
+                ob.ListTenantsRequest(), timeout=LIST_TENANTS_TIMEOUT_S)
+    except grpc.aio.AioRpcError as e:
+        # Details carry internal addresses: log them, give the page the code only.
+        log.warning("ListTenants via %s failed: %s %s", target, e.code().name, e.details())
+        return web.json_response(
+            {"error": f"orchestrator ListTenants failed: {e.code().name}"}, status=503)
+    return web.json_response(
+        {"tenants": [{"slug": t.slug, "display_name": t.display_name, "locale": t.locale,
+                      "source": t.source, "documents": t.documents}
+                     for t in resp.tenants]},
+        headers={"Cache-Control": "no-store"})   # a client who just signed up shows at once
+
+
 async def healthz(request):
     """Liveness/readiness for k8s. The edge holds no model, so it is ready as soon
     as it listens; the active-call count shows whether a rollout would cut calls."""
@@ -327,24 +359,34 @@ async def on_shutdown(app):
     app["calls"].clear()
 
 
-def main():
+def _env(name: str, default: str) -> str:
+    # Empty counts as unset: manifests often template a variable to "".
+    return os.environ.get(name) or default
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    # Env for containers (compose and k8s set service names), flags for a
+    # terminal; an explicit flag still wins over the environment.
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8082)
-    ap.add_argument("--stt", default="127.0.0.1:50051")
-    ap.add_argument("--orchestrator", default="127.0.0.1:50052")
-    ap.add_argument("--tts", default="http://127.0.0.1:8083")
-    ap.add_argument("--default-tenant", default="acme")
+    ap.add_argument("--host", default=_env("HOST", "127.0.0.1"),
+                    help="bind address (env HOST)")
+    ap.add_argument("--port", type=int, default=_env("PORT", "8082"),
+                    help="listen port (env PORT)")
+    ap.add_argument("--stt", default=_env("STT_ADDR", "127.0.0.1:50051"),
+                    help="STT gRPC target (env STT_ADDR)")
+    ap.add_argument("--orchestrator", default=_env("ORCHESTRATOR_ADDR", "127.0.0.1:50052"),
+                    help="orchestrator gRPC target (env ORCHESTRATOR_ADDR)")
+    ap.add_argument("--tts", default=_env("TTS_URL", "http://127.0.0.1:8083"),
+                    help="TTS base URL (env TTS_URL)")
+    ap.add_argument("--default-tenant", default=_env("DEFAULT_TENANT", "acme"),
+                    help="tenant for an /offer that names none (env DEFAULT_TENANT)")
     ap.add_argument("--silence-ms", type=int, default=900)
     ap.add_argument("--min-speech-ms", type=int, default=200)
     ap.add_argument("--vad-threshold", type=float, default=0.5)
-    args = ap.parse_args()
+    return ap.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
-                        datefmt="%H:%M:%S")
-    logging.getLogger("aioice").setLevel(logging.WARNING)
 
+def make_app(args: argparse.Namespace) -> web.Application:
     app = web.Application()
     app["calls"] = set()
     app["stt_target"] = args.stt
@@ -357,10 +399,21 @@ def main():
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/w/{slug}", widget)
+    app.router.add_get("/tenants", tenants)
     app.router.add_get("/healthz", healthz)
     app.router.add_post("/offer", offer)
     app.router.add_static("/static", STATIC)
+    return app
 
+
+def main():
+    args = parse_args()
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+                        datefmt="%H:%M:%S")
+    logging.getLogger("aioice").setLevel(logging.WARNING)
+
+    app = make_app(args)
     log.info("STT %s | orchestrator %s | TTS %s", args.stt, args.orchestrator, args.tts)
     log.info("open http://%s:%d", args.host, args.port)
     web.run_app(app, host=args.host, port=args.port, access_log=None)
