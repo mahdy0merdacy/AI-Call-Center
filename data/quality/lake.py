@@ -106,9 +106,35 @@ def free_text_columns() -> list[str]:
     return cols
 
 
-def known_tenants() -> set[str]:
+def yaml_tenants() -> set[str]:
+    """The test tenants: tenants/*.yaml."""
     return {yaml.safe_load(p.read_text())["tenant_id"]
             for p in TENANTS.glob("*.yaml")}
+
+
+@cache
+def platform_tenants(url: str | None) -> frozenset[str]:
+    """Active platform clients: accounts_tenant ids (UUIDs) in the portal's Postgres.
+
+    Read as voice_reader, which may select only (id, name, slug, is_active) of
+    accounts_tenant. No URL: none (a laptop or CI without the portal). A URL that
+    does not answer raises: checking platform calls against the YAML alone would
+    fail every one of them, so better to fail saying why.
+    """
+    if not url:
+        return frozenset()
+    import psycopg
+
+    with psycopg.connect(url, connect_timeout=10) as conn:
+        conn.read_only = True
+        rows = conn.execute("SELECT id FROM accounts_tenant WHERE is_active").fetchall()
+    return frozenset(str(r[0]) for r in rows)
+
+
+def known_tenants() -> set[str]:
+    """Every tenant a call may be for: the YAML test tenants, plus the active
+    platform clients when PLATFORM_DATABASE_URL is set."""
+    return yaml_tenants() | platform_tenants(os.environ.get("PLATFORM_DATABASE_URL"))
 
 
 # What must never survive masking in free text (silver_calls.py masks these).
@@ -182,4 +208,149 @@ def gold_tenant_daily(since: str | None = None) -> pd.DataFrame:
               .rename("silver_calls").reset_index())
     gold["synthetic"] = gold["synthetic"].astype(bool)
     return gold.merge(counts, on=["tenant_id", "call_date", "synthetic"], how="left")
+
+
+# -- insights: silver sentiment and knowledge, gold for the Insights page --------------
+#
+# These tables appear only once their events do (no sentiment service, no
+# platform call yet), so a missing table reads as an EMPTY frame with the columns
+# its checks name: nothing to check is not a failure. Any other read error still
+# raises.
+
+KEY = ["tenant_id", "call_date", "synthetic"]
+
+
+def read_or_empty(table: str, partition: str | None, since: str | None,
+                  columns: list[str]) -> pd.DataFrame:
+    from deltalake.exceptions import TableNotFoundError
+
+    try:
+        return read(table, partition, since).to_pandas()
+    except TableNotFoundError:
+        return pd.DataFrame({c: pd.Series(dtype="object") for c in columns})
+
+
+def _synthetic(df: pd.DataFrame) -> pd.DataFrame:
+    """As gold keys it: a call without CallStarted (synthetic NULL) is real traffic."""
+    df["synthetic"] = df["synthetic"].astype("boolean").fillna(False).astype(bool)
+    return df
+
+
+def _reconcile(gold: pd.DataFrame, silver: pd.DataFrame, keys: list[str],
+               name: str) -> pd.DataFrame:
+    """gold + column `name`: the silver rows behind each gold row (0 when none)."""
+    gold = _synthetic(gold)
+    if gold.empty:
+        gold[name] = pd.Series(dtype="int64")
+        return gold
+    silver = _synthetic(silver)
+    counts = silver.groupby(keys).size().rename(name).reset_index()
+    out = gold.merge(counts, on=keys, how="left")
+    out[name] = out[name].fillna(0).astype("int64")
+    return out
+
+
+SILVER_UTTERANCE_EMOTIONS = ["event_id", "call_id", "tenant_id", "call_date", "synthetic",
+                             "utterance_index", "emotion", "score"]
+SILVER_CALL_SENTIMENT = ["call_id", "tenant_id", "call_date", "synthetic", "utterances",
+                         "dominant", "first_emotion", "last_emotion", "trend", "escalation_risk"]
+SILVER_KNOWLEDGE_SEARCHES = ["event_id", "call_id", "tenant_id", "call_date", "synthetic",
+                             "query", "hits", "best_similarity", "covered", "failed",
+                             "document_titles", "latency_ms"]
+
+
+def silver_utterance_emotions(since: str | None = None) -> pd.DataFrame:
+    return read_or_empty("silver/utterance_emotions", "call_date", since,
+                         SILVER_UTTERANCE_EMOTIONS)
+
+
+def silver_call_sentiment(since: str | None = None) -> pd.DataFrame:
+    return read_or_empty("silver/call_sentiment", "call_date", since, SILVER_CALL_SENTIMENT)
+
+
+def silver_knowledge_searches(since: str | None = None) -> pd.DataFrame:
+    return read_or_empty("silver/knowledge_searches", "call_date", since,
+                         SILVER_KNOWLEDGE_SEARCHES)
+
+
+def with_outcome_total(df: pd.DataFrame, parts: list[str]) -> pd.DataFrame:
+    """The sum of the parts a total must split into (ok + errors + timeouts = calls)."""
+    df["outcome_total"] = df[parts].fillna(0).sum(axis=1).astype("int64") if len(df) else 0
+    return df
+
+
+def gold_sentiment_daily(since: str | None = None) -> pd.DataFrame:
+    gold = read_or_empty("gold/sentiment_daily", "call_date", since,
+                         [*KEY, "emotion", "utterances"])
+    return _reconcile(gold, silver_utterance_emotions(since), [*KEY, "emotion"],
+                      "silver_utterances")
+
+
+def gold_call_sentiment_daily(since: str | None = None) -> pd.DataFrame:
+    gold = read_or_empty("gold/call_sentiment_daily", "call_date", since,
+                         [*KEY, "calls", "escalation_risk_calls", "improving", "stable",
+                          "worsening", "ended_negative"])
+    gold = with_outcome_total(gold, ["improving", "stable", "worsening"])
+    return _reconcile(gold, silver_call_sentiment(since), KEY, "silver_calls")
+
+
+def gold_tool_daily(since: str | None = None) -> pd.DataFrame:
+    gold = read_or_empty("gold/tool_daily", "call_date", since,
+                         [*KEY, "tool", "calls", "ok", "errors", "timeouts", "avg_latency_ms"])
+    gold = with_outcome_total(gold, ["ok", "errors", "timeouts"])
+    # Turns carry the tool; the day and traffic type come from their call.
+    turns = read("silver/turns").select(["call_id", "tool"]).to_pandas()
+    calls = read("silver/calls", "call_date", since).select(
+        ["call_id", *KEY]).to_pandas()
+    tools = turns[turns["tool"].notna()].merge(calls, on="call_id")
+    return _reconcile(gold, tools, [*KEY, "tool"], "silver_tool_calls")
+
+
+def gold_knowledge_daily(since: str | None = None) -> pd.DataFrame:
+    gold = read_or_empty("gold/knowledge_daily", "call_date", since,
+                         [*KEY, "searches", "covered", "uncovered", "failed", "avg_latency_ms"])
+    gold = with_outcome_total(gold, ["covered", "uncovered", "failed"])
+    return _reconcile(gold, silver_knowledge_searches(since), KEY, "silver_searches")
+
+
+def gold_document_usage(since: str | None = None) -> pd.DataFrame:
+    return read_or_empty("gold/document_usage", "call_date", since,
+                         [*KEY, "document_title", "uses"])
+
+
+def gold_knowledge_gaps(since: str | None = None) -> pd.DataFrame:
+    return read_or_empty("gold/knowledge_gaps", "call_date", since,
+                         [*KEY, "question", "asked", "best_similarity"])
+
+
+def with_day_calls(df: pd.DataFrame) -> pd.DataFrame:
+    """Calls of the row's whole day (all hours), to reconcile with silver per day."""
+    df["day_calls"] = (df.groupby(KEY)["calls"].transform("sum").astype("int64")
+                       if len(df) else pd.Series(dtype="int64"))
+    return df
+
+
+def gold_hourly(since: str | None = None) -> pd.DataFrame:
+    gold = read_or_empty("gold/hourly", "call_date", since, [*KEY, "hour", "calls"])
+    calls = read("silver/calls", "call_date", since).select(KEY).to_pandas()
+    return _reconcile(with_day_calls(_synthetic(gold)), calls, KEY, "silver_calls")
+
+
+def with_transcript_text(df: pd.DataFrame) -> pd.DataFrame:
+    """Every line of the transcript in one column, so one check covers them all."""
+    def text(lines) -> str:
+        if lines is None or isinstance(lines, float):      # NULL, or NaN in pandas
+            return ""
+        return " ".join(str(line.get("text") or "") for line in lines).strip()
+
+    df["transcript_text"] = (df["transcript"].map(text) if len(df)
+                             else pd.Series(dtype="object"))
+    return df
+
+
+def gold_calls_to_review(since: str | None = None) -> pd.DataFrame:
+    return with_transcript_text(read_or_empty(
+        "gold/calls_to_review", "call_date", since,
+        [*KEY, "call_id", "started_at", "reason", "last_emotion", "duration_s", "turns",
+         "transcript"]))
 

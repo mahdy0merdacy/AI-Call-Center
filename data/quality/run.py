@@ -41,7 +41,18 @@ LOADERS = {
     "silver_call_events": lake.silver_call_events,
     "silver_calls": lake.silver_calls,
     "silver_turns": lake.silver_turns,
+    "silver_utterance_emotions": lake.silver_utterance_emotions,
+    "silver_call_sentiment": lake.silver_call_sentiment,
+    "silver_knowledge_searches": lake.silver_knowledge_searches,
     "gold_tenant_daily": lake.gold_tenant_daily,
+    "gold_sentiment_daily": lake.gold_sentiment_daily,
+    "gold_call_sentiment_daily": lake.gold_call_sentiment_daily,
+    "gold_tool_daily": lake.gold_tool_daily,
+    "gold_knowledge_daily": lake.gold_knowledge_daily,
+    "gold_document_usage": lake.gold_document_usage,
+    "gold_knowledge_gaps": lake.gold_knowledge_gaps,
+    "gold_hourly": lake.gold_hourly,
+    "gold_calls_to_review": lake.gold_calls_to_review,
 }
 
 
