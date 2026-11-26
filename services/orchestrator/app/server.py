@@ -14,8 +14,17 @@ Configured from the environment, so one image runs unchanged under Compose and
 k3s. Every flag defaults to its variable:
 
     HOST, PORT               where to listen (0.0.0.0:50052)
-    GROQ_API_KEY             the LLM key (a Secret in k8s)
-    LLM_URL, LLM_MODEL       any OpenAI-compatible chat completions endpoint
+    LLM_URL, LLM_MODEL       the LLM: any OpenAI-compatible chat completions endpoint
+                             (k3s: vLLM on predator); unset = Groq
+    LLM_API_KEY              its key, if it wants one (vLLM in the cluster does not)
+    GROQ_API_KEY             Groq's key (a Secret in k8s): the fallback when the LLM
+                             above is unreachable, or the LLM itself when LLM_URL is unset
+    GROQ_MODEL               the model on Groq as a fallback (qwen/qwen3.8-27b)
+    LLM_FALLBACK             groq (default) | off
+    LLM_FIRST_TOKEN_TIMEOUT_S  how long the LLM gets for a first token before Groq
+                             answers the turn instead (3)
+    LLM_COOLDOWN_S           after such a failure, how long turns go straight to
+                             Groq before the LLM is tried again (30)
     TENANTS_DIR              the test tenants (tenants/*.yaml)
     PLATFORM_DATABASE_URL    the portal's Postgres, as voice_reader; unset = test tenants only
     KNOWLEDGE_URL            the knowledge service; unset = no retrieval
@@ -48,9 +57,10 @@ sys.path.insert(0, str(_HERE.parents[3] / "libs"))
 
 from aicc_events import CallEvents, EventPublisher, ev, new_ulid  # noqa: E402
 
-from app.agent import GROQ_URL, Agent  # noqa: E402
+from app.agent import Agent  # noqa: E402
 from app.flow import Tenant, load_tenants  # noqa: E402
 from app.knowledge import KnowledgeClient  # noqa: E402
+from app.llm import GROQ_MODEL, GROQ_URL, LlmBackend, LlmRouter  # noqa: E402
 from app.tenants import (  # noqa: E402
     DirectoryUnavailable,
     PostgresPlatformSource,
@@ -138,6 +148,12 @@ class Session:
                 prompt_tokens=e.get("prompt_tokens", 0),
                 completion_tokens=e.get("completion_tokens", 0),
                 cancelled=e.get("cancelled", False)))
+        elif t == "llm_fallback":
+            log.warning("[%s] LLM %s failed (%s): turn answered by %s", self.call_id,
+                        e.get("from"), e.get("reason"), e.get("to"))
+            self.events.emit(error_raised=ev.ErrorRaised(
+                component="llm", code="fallback",
+                detail=f"{e.get('from')} -> {e.get('to')}: {e.get('reason')}"))
         elif t == "escalated":
             log.info("[%s] ESCALATED", self.call_id)
             self.emit(pb.Directive(hangup=pb.Hangup(reason="escalate")))
@@ -184,13 +200,14 @@ _TURN_KIND = {"say": ev.TURN_KIND_SAY, "ready_for_tool": ev.TURN_KIND_READY_FOR_
 class OrchestratorServicer(pb_grpc.OrchestratorServicer):
     def __init__(self, tenants: TenantDirectory | Mapping[str, Tenant], groq_key, model,
                  mcp_endpoints, publisher: EventPublisher | None = None,
-                 llm_url: str = GROQ_URL, knowledge: KnowledgeClient | None = None):
+                 llm_url: str = GROQ_URL, knowledge: KnowledgeClient | None = None,
+                 llm: LlmRouter | None = None):
         # A plain {slug: Tenant} still works: the test tenants alone, as before.
         self.tenants = (tenants if isinstance(tenants, TenantDirectory)
                         else TenantDirectory(tenants))
-        self.groq_key = groq_key
-        self.model = model
-        self.llm_url = llm_url
+        # One router for every call: when predator fails, the cooldown spares
+        # the other calls its timeout too. Without one: a single endpoint.
+        self.llm = llm or LlmRouter(LlmBackend("llm", llm_url, model, groq_key))
         self.mcp_endpoints = mcp_endpoints
         self.publisher = publisher or EventPublisher(ev.SERVICE_ORCHESTRATOR)
         self.knowledge = knowledge
@@ -260,8 +277,8 @@ class OrchestratorServicer(pb_grpc.OrchestratorServicer):
                                  if t in self.mcp_endpoints},
                         allowed=set(tenant.tools),
                     )
-                    agent = Agent(self.groq_key, self.model, tenant, registry,
-                                  llm_url=self.llm_url, knowledge=self.knowledge)
+                    agent = Agent("", "", tenant, registry, knowledge=self.knowledge,
+                                  llm=self.llm)
                     session = Session(tenant, agent, call_id,
                                       self.publisher.for_call(call_id, tenant.tenant_id))
                     self.active[call_id] = session
@@ -418,8 +435,7 @@ async def serve(args):
         for line in Path(args.env).read_text().splitlines():  # noqa: ASYNC240
             if line.startswith("GROQ_API_KEY="):
                 groq_key = line.split("=", 1)[1].strip()
-    if not groq_key:
-        log.warning("no GROQ_API_KEY — the agent cannot reply")
+    llm = llm_router(args, groq_key, os.environ.get("LLM_API_KEY", "").strip())
 
     mcp = args.mcp_endpoints
     log.info("MCP tools: %s", ", ".join(f"{tool} -> {_for_log(url)}"
@@ -444,10 +460,12 @@ async def serve(args):
 
     publisher = EventPublisher.from_env(ev.SERVICE_ORCHESTRATOR)
     servicer = OrchestratorServicer(directory, groq_key, args.llm_model, mcp, publisher,
-                                    llm_url=args.llm_url, knowledge=knowledge)
+                                    knowledge=knowledge, llm=llm)
     server, health, port = await start_server(servicer, args.host, args.port)
     log.info("orchestrator on %s:%d | LLM %s | %d test tenant(s)",
              args.host, port, args.llm_model, len(tenants))
+    # With a fallback, a primary that is down is skipped without a turn waiting for it.
+    watch = asyncio.create_task(llm.watch()) if llm.fallback else None
 
     stop, interrupted = asyncio.Event(), asyncio.Event()
 
@@ -460,10 +478,43 @@ async def serve(args):
         loop.add_signal_handler(sig, on_signal)
     await stop.wait()
     await shutdown(server, health, servicer, args.shutdown_grace, interrupted)
+    if watch:
+        watch.cancel()
     # After the calls drain: their CallEnded events are queued by now.
     publisher.close(timeout=5.0)
     await directory.close()
     log.info("stopped")
+
+
+LLM_FALLBACKS = ("groq", "off")
+
+
+def llm_router(args: argparse.Namespace, groq_key: str, llm_key: str = "") -> LlmRouter:
+    """The LLM from LLM_URL / LLM_MODEL, with Groq behind it (app/llm.py).
+
+    LLM_URL unset (or Groq's own URL): Groq alone, as LLM_MODEL. Otherwise that
+    endpoint first, and Groq, as GROQ_MODEL, when it cannot answer: unless
+    LLM_FALLBACK=off, or there is no GROQ_API_KEY to fall back with.
+    """
+    if args.llm_url == GROQ_URL:
+        if not groq_key:
+            log.warning("no GROQ_API_KEY and no LLM_URL: the agent cannot reply")
+        log.info("LLM: %s on Groq, no fallback", args.llm_model)
+        return LlmRouter(LlmBackend("groq", GROQ_URL, args.llm_model, llm_key or groq_key))
+
+    primary = LlmBackend(urlsplit(args.llm_url).hostname or "llm", args.llm_url,
+                         args.llm_model, llm_key)
+    fallback = None
+    if args.llm_fallback == "groq":
+        if groq_key:
+            fallback = LlmBackend("groq", GROQ_URL, args.groq_model, groq_key)
+        else:
+            log.warning("no GROQ_API_KEY: no fallback if %s is unreachable", primary.name)
+    log.info("LLM: %s at %s%s", primary.model, _for_log(primary.url),
+             f", then {fallback.model} on Groq after {args.llm_first_token_timeout:g} s "
+             f"without a first token" if fallback else ", no fallback")
+    return LlmRouter(primary, fallback, first_token_timeout_s=args.llm_first_token_timeout,
+                     cooldown_s=args.llm_cooldown)
 
 
 def mcp_endpoints(args: argparse.Namespace) -> dict[str, str]:
@@ -487,10 +538,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default=env.get("HOST") or "0.0.0.0")
     ap.add_argument("--port", type=int, default=env.get("PORT") or "50052")
-    ap.add_argument("--llm-model", default=env.get("LLM_MODEL") or "qwen/qwen3.8-27b")
-    # Any OpenAI-compatible chat completions endpoint. The call simulator points
-    # this at its fake LLM, so load tests are free, fast and repeatable.
+    ap.add_argument("--llm-model", default=env.get("LLM_MODEL") or GROQ_MODEL)
+    # Any OpenAI-compatible chat completions endpoint: vLLM on predator in k3s.
+    # The call simulator points this at its fake LLM, so load tests are free,
+    # fast and repeatable.
     ap.add_argument("--llm-url", default=env.get("LLM_URL") or GROQ_URL)
+    ap.add_argument("--groq-model", default=env.get("GROQ_MODEL") or GROQ_MODEL,
+                    help="the Groq model to fall back to")
+    ap.add_argument("--llm-fallback", choices=LLM_FALLBACKS,
+                    default=env.get("LLM_FALLBACK") or "groq")
+    ap.add_argument("--llm-first-token-timeout", type=float,
+                    default=env.get("LLM_FIRST_TOKEN_TIMEOUT_S") or "3",
+                    help="seconds the LLM gets for a first token before Groq answers")
+    ap.add_argument("--llm-cooldown", type=float, default=env.get("LLM_COOLDOWN_S") or "30",
+                    help="seconds turns go straight to Groq after the LLM failed")
     ap.add_argument("--mcp-servers", default=env.get("MCP_SERVERS") or "",
                     help="tool=url,... ; when set, replaces --mcp-acme/--mcp-swiftnet")
     ap.add_argument("--mcp-acme", default="http://127.0.0.1:9101/mcp")
@@ -512,6 +573,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ap.error(str(exc))
     if args.knowledge_url and not _is_http_url(args.knowledge_url):
         ap.error("KNOWLEDGE_URL (--knowledge-url) must be an http(s) URL")
+    # choices= checks the flag only, not a default taken from the environment.
+    if args.llm_fallback not in LLM_FALLBACKS:
+        ap.error(f"LLM_FALLBACK must be one of {', '.join(LLM_FALLBACKS)}")
+    if not _is_http_url(args.llm_url):
+        ap.error("LLM_URL (--llm-url) must be an http(s) URL")
+    if args.llm_first_token_timeout <= 0 or args.llm_cooldown < 0:
+        ap.error("LLM_FIRST_TOKEN_TIMEOUT_S must be > 0 and LLM_COOLDOWN_S >= 0")
     if args.shutdown_grace < 0:
         ap.error("SHUTDOWN_GRACE_S (--shutdown-grace) cannot be negative")
     return args

@@ -1,0 +1,6 @@
+# Apart from aicc-data: that one can be deleted without touching the calls path,
+# and this one is on it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aicc-llm

@@ -1,0 +1,16 @@
+# Layer 60: the call LLM on predator's GPU (namespace aicc-llm). vLLM serving
+# Qwen3-8B-AWQ, OpenAI-compatible, with prefix caching: each tenant's system
+# prompt stays prefilled, so a turn pays only for its new words.
+#   kubectl apply -k deploy/k3s/60-llm
+#   kubectl -n aicc-llm logs deploy/llm -f      # first start: ~10 GB image, ~6 GB model
+# The orchestrator uses it first and falls back to Groq when it is unreachable
+# (services/orchestrator/app/llm.py), so this layer can be down, or not applied.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc-llm
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-llm}
+
+resources:
+  - namespace.yaml
+  - vllm.yaml

@@ -7,7 +7,7 @@
 #
 #   aicc-core      every key of deploy/.env (passwords, Django keys, JWT_PUBLIC_KEY)
 #   aicc-jwt-keys  deploy/keys/jwt_private.pem + jwt_public.pem (mounted by the portal)
-#   aicc-llm       GROQ_API_KEY (+ LLM_URL / LLM_MODEL if set) from the root .env
+#   aicc-llm       GROQ_API_KEY (+ LLM_URL / LLM_MODEL / GROQ_MODEL if set) from the root .env
 #
 # Why a script and not a kustomize secretGenerator: the values must never land in
 # git, and `kubectl create secret ... --dry-run=client -o yaml | kubectl apply`
@@ -25,7 +25,7 @@ done
 
 llm_env=$(mktemp)
 trap 'rm -f "$llm_env"' EXIT
-grep -E '^(GROQ_API_KEY|LLM_URL|LLM_MODEL)=.' "$ROOT/.env" >"$llm_env" 2>/dev/null || true
+grep -E '^(GROQ_API_KEY|GROQ_MODEL|LLM_URL|LLM_MODEL)=.' "$ROOT/.env" >"$llm_env" 2>/dev/null || true
 
 render() {
   # deploy/.env has comment lines; --from-env-file skips them.

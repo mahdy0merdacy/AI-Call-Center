@@ -29,7 +29,10 @@ spec:
         - name: orchestrator
           image: aicc/orchestrator
           envFrom:
-            - secretRef: {name: aicc-llm}           # GROQ_API_KEY (later: LLM_URL to predator)
+            # GROQ_API_KEY: the LLM is Groq. For vLLM on predator first, with Groq
+            # as the fallback (app/llm.py), apply 60-llm and set LLM_URL and LLM_MODEL
+            # (qwen3-8b) here.
+            - secretRef: {name: aicc-llm}
           env:
             - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: VOICE_READER_PASSWORD}}}
             - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}

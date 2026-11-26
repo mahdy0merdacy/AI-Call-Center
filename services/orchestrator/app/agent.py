@@ -20,6 +20,7 @@ in its own documents, and only the passages that match go into the prompt.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -31,11 +32,10 @@ import aiohttp
 from .dates import say_dates
 from .flow import CallFlowState, Tenant, TurnAction, route_by_slot, route_scored
 from .knowledge import COVERED_MIN, KnowledgeClient, KnowledgeError, Passage, SearchResult
+from .llm import GROQ_URL, LlmBackend, LlmRouter
 from .tools import ToolRegistry
 
 log = logging.getLogger("agent")
-
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 _BOUNDARY = re.compile(r'(?<=[.!?])\s+|(?<=[,;:])\s+(?=\w{6,})')
 MIN_CLAUSE_CHARS = 18
@@ -47,10 +47,11 @@ class Agent:
 
     def __init__(self, api_key: str, model: str, tenant: Tenant,
                  tools: ToolRegistry, llm_url: str = GROQ_URL,
-                 knowledge: KnowledgeClient | None = None):
-        self.api_key = api_key
-        self.model = model
-        self.llm_url = llm_url      # any OpenAI-compatible chat completions endpoint
+                 knowledge: KnowledgeClient | None = None,
+                 llm: LlmRouter | None = None):
+        # The LLM(s) to ask, in order (app/llm.py). Without a router: the one
+        # endpoint given by api_key / model / llm_url, with no fallback.
+        self.llm = llm or LlmRouter(LlmBackend("llm", llm_url, model, api_key))
         self.tenant = tenant
         self.tools = tools
         self.knowledge = knowledge  # searches tenant.knowledge_id; None = not configured
@@ -61,6 +62,7 @@ class Agent:
         self.turn_index = 0         # 0 = greeting; each caller utterance adds one
         self.route_score: float | None = None   # set only when routing ran this turn
         self.llm_stats: dict = {}   # filled by _stream_llm, read after each LLM call
+        self.llm_fallbacks: list[dict] = []     # likewise: backends skipped this turn
 
     # -- prompts ----------------------------------------------------------
 
@@ -122,13 +124,50 @@ class Agent:
     # -- LLM --------------------------------------------------------------
 
     async def _stream_llm(self, session: aiohttp.ClientSession, messages: list[dict]):
-        payload = {"model": self.model, "messages": messages, "temperature": 0.5,
+        """Reply tokens, from the first backend that starts answering in time.
+
+        A backend that fails before its first token (unreachable, an HTTP error,
+        no token within first_token_timeout_s) hands the turn to the next one.
+        The last one gets no deadline: there is nothing left to fall back to.
+        """
+        self.llm_fallbacks = []
+        backends = self.llm.order()
+        for i, backend in enumerate(backends):
+            last = i == len(backends) - 1
+            self.llm_stats = {"model": backend.model, "ttft_ms": 0,
+                              "prompt_tokens": 0, "completion_tokens": 0}
+            stream = self._stream_from(session, backend, messages)
+            try:
+                async with asyncio.timeout(None if last else self.llm.first_token_timeout_s):
+                    first = await anext(stream, None)
+            except Exception as exc:
+                await stream.aclose()
+                self.llm.failed(backend)
+                if last:
+                    raise
+                reason = _failure(exc, self.llm.first_token_timeout_s)
+                log.warning("LLM %s failed before its first token (%s): using %s",
+                            backend.name, reason, backends[i + 1].name)
+                self.llm_fallbacks.append({"from": backend.name, "to": backends[i + 1].name,
+                                           "reason": reason})
+                continue
+            self.llm.succeeded(backend)
+            if first is not None:
+                yield first
+                async for tok in stream:
+                    yield tok
+            return
+
+    async def _stream_from(self, session: aiohttp.ClientSession, backend: LlmBackend,
+                           messages: list[dict]):
+        payload = {"model": backend.model, "messages": messages, "temperature": 0.5,
                    "max_tokens": 180, "stream": True}
-        headers = {"Authorization": f"Bearer {self.api_key}",
-                   "Content-Type": "application/json"}
-        stats = self.llm_stats = {"ttft_ms": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        headers = {"Content-Type": "application/json"}
+        if backend.api_key:
+            headers["Authorization"] = f"Bearer {backend.api_key}"
+        stats = self.llm_stats
         t0 = time.perf_counter()
-        async with session.post(self.llm_url, json=payload, headers=headers,
+        async with session.post(backend.url, json=payload, headers=headers,
                                 timeout=aiohttp.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"LLM HTTP {resp.status}: {(await resp.text())[:160]}")
@@ -341,7 +380,9 @@ class Agent:
                     on_say(self._spoken_dates(clause.strip()))
         finally:
             # Reported even when the stream fails or is cut short by a barge-in.
-            on_event({"type": "llm", "turn": self.turn_index, "model": self.model,
+            for fb in self.llm_fallbacks:
+                on_event({"type": "llm_fallback", "turn": self.turn_index, **fb})
+            on_event({"type": "llm", "turn": self.turn_index, "model": self.llm.primary.model,
                       "purpose": "grounded" if action.kind == "ready_for_tool" else "open",
                       "total_ms": int((time.perf_counter() - t0) * 1000),
                       "cancelled": self.cancelled, **self.llm_stats})
@@ -368,6 +409,15 @@ class Agent:
                 buf = buf[cut:]
                 continue
             return
+
+
+def _failure(exc: BaseException, timeout_s: float) -> str:
+    """Why a backend gave no first token, short enough for a log line."""
+    if isinstance(exc, TimeoutError):
+        return f"no first token within {timeout_s:g} s"
+    if isinstance(exc, aiohttp.ClientConnectorError):
+        return f"unreachable: {exc.os_error or exc}"[:160]
+    return f"{type(exc).__name__}: {exc}"[:160]
 
 
 class _Counted:
