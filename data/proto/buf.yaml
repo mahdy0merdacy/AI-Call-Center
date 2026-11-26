@@ -12,6 +12,6 @@ breaking:
   use:
     # Records in Kafka and the lake are read for months by consumers on older and
     # newer code. WIRE_JSON blocks what breaks them: a reused or retyped field
-    # number, a renamed JSON field. The Schema Registry (FULL_TRANSITIVE) checks
-    # the same thing at publish time; this catches it at review time instead.
+    # number, a renamed JSON field. This is the forward-compatibility gate; the
+    # Schema Registry (BACKWARD_TRANSITIVE) checks the other direction at publish.
     - WIRE_JSON

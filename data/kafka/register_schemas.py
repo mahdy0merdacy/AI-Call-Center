@@ -9,8 +9,15 @@ registry dedupes identical schemas and hands back ONE id. That id is what each
 record carries in its 5-byte header (see smoke.py).
 
 `--check` is the evolution gate (DDIA.md §3): edit the .proto, run --check, and
-the registry says whether every previous version can still read new records and
-vice versa (FULL_TRANSITIVE). Run it before deploying a producer.
+the registry says whether the new schema can read every record written so far
+(BACKWARD_TRANSITIVE). Run it before deploying a producer.
+
+Why not FULL_TRANSITIVE: the registry's Protobuf rules count a NEW event type in
+the payload oneof as forward-incompatible, so no event type could ever be added
+(KnowledgeSearched was rejected). On the wire it is compatible (an old reader
+skips the unknown field), and that direction is enforced at review time by
+`buf breaking` (WIRE_JSON) in CI, which is what consumers decoding with their
+own generated classes actually rely on.
 """
 
 import argparse
@@ -24,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROTO = ROOT / "proto/aicallcenter/events/v1/events.proto"
 SUBJECTS = ["calls.events.v1-value", "calls.partials.v1-value", "dlq.calls.events.v1-value",
             "calls.sentiment.v1-value"]
-COMPAT = "FULL_TRANSITIVE"
+COMPAT = "BACKWARD_TRANSITIVE"
 
 
 def call(method: str, url: str, body: dict | None = None) -> dict:

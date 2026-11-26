@@ -101,7 +101,7 @@ spec:
             - {name: SCHEMA_REGISTRY_LISTENERS, value: "http://0.0.0.0:8081"}
             - {name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS, value: "PLAINTEXT://kafka-1:19092"}
             - {name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR, value: "1"}
-            - {name: SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL, value: full_transitive}
+            - {name: SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL, value: backward_transitive}
             - {name: SCHEMA_REGISTRY_HEAP_OPTS, value: "-Xms256m -Xmx256m"}
           ports:
             - {name: http, containerPort: 8081}

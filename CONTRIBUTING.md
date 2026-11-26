@@ -149,7 +149,7 @@ After merge, **register the schema before deploying any producer that writes the
 ```bash
 .venv/bin/python data/kafka/register_schemas.py
 ```
-The registry uses `FULL_TRANSITIVE` compatibility: the new schema must stay compatible with every version registered before it. Order matters because the publisher tags each record with the *latest registered* schema id. If you deploy first, records carrying the new field are tagged with the old id, and any reader that decodes by that id silently loses the field.
+The registry uses `BACKWARD_TRANSITIVE` compatibility: the new schema must read every record written so far. The other direction (old consumers reading new records) is checked by `buf breaking` in CI; the registry's full mode would refuse any new event type. Order matters because the publisher tags each record with the *latest registered* schema id. If you deploy first, records carrying the new field are tagged with the old id, and any reader that decodes by that id silently loses the field.
 
 CI runs on every MR that touches `data/`, `libs/aicc_events/` or `tenants/`:
 

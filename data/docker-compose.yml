@@ -94,7 +94,7 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
       # Default for every subject: a new version must be backward AND forward
       # compatible with ALL previous versions. DDIA.md §3.
-      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: full_transitive
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward_transitive
       SCHEMA_REGISTRY_HEAP_OPTS: "-Xms256m -Xmx256m"
     mem_limit: 512m
     healthcheck:

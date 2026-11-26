@@ -15,9 +15,10 @@ import "google/protobuf/descriptor.proto";
 //   backward compatible  new code reads old records   (replaying the log)
 //   forward compatible   old code reads new records   (consumers upgraded last)
 //
-// Rules that keep both true. The Schema Registry enforces them at publish time
-// (compatibility = FULL_TRANSITIVE), but they are written here because a
-// rejected deploy is a worse place to learn them:
+// Rules that keep both true. The Schema Registry enforces backward compatibility
+// at publish time (BACKWARD_TRANSITIVE), `buf breaking` enforces the wire rules
+// in CI (forward: its FULL mode would refuse any new payload type), and they are
+// written here because a rejected deploy is a worse place to learn them:
 //
 //   1. Never change a field's number or type. The number IS the field on the wire.
 //   2. Never reuse a number. Deleting a field means `reserved 7; reserved "name";`
