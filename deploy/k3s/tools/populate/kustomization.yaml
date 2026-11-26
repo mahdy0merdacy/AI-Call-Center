@@ -1,0 +1,23 @@
+# The history backfill Job (../populate-history.yaml) with the generator's files.
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/tools/populate | kubectl apply -f -
+# The files come straight from data/simulator, so the Job runs the code in this
+# checkout; the ConfigMap name carries a hash of it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-tools}
+
+resources:
+  - ../populate-history.yaml
+
+configMapGenerator:
+  - name: history-simulator
+    files:
+      - ../../../../data/simulator/history.py
+      - ../../../../data/simulator/history_scenarios.py
+      - ../../../../data/simulator/fake_llm.py
+
+images:
+  # An orchestrator image built from 9e65b2c or later. SET THE TAG before applying.
+  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: SET-ME}
