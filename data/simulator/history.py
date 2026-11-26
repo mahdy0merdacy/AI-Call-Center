@@ -57,7 +57,9 @@ from datetime import UTC, date, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
+# abspath, not resolve(): a ConfigMap mounts each file as a symlink into a
+# timestamped subfolder, and the layout around it is what counts.
+HERE = Path(os.path.abspath(__file__)).parent
 # <repo> from a checkout; /srv/aicc in the orchestrator image (AICC_ROOT overrides).
 ROOT = Path(os.environ.get("AICC_ROOT") or HERE.parents[1])
 for p in (HERE, ROOT / "libs", ROOT / "services" / "orchestrator"):
