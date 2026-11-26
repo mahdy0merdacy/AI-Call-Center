@@ -12,6 +12,7 @@ export const paths = {
   mfaSetup: '/mfa/setup',
   dashboard: '/dashboard',
   documents: '/documents',
+  insights: '/insights',
   profile: '/profile',
   adminTenants: '/admin/tenants',
   suspended: '/suspended',

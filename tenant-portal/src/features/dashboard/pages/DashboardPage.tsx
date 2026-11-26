@@ -2,7 +2,7 @@
  * Signed-in home: a sample call replaying the tenant's own process on the call
  * console, the button to call the real agent, and the account summary.
  */
-import { ArrowRight, Building2, FileText, LogOut, Settings } from 'lucide-react';
+import { ArrowRight, BarChart3, Building2, FileText, LogOut, Settings } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthedUser } from '@/app/guards';
@@ -21,6 +21,9 @@ import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
 import { TestAgentCard } from '../components/TestAgentCard';
 
 const t = messages.dashboard;
+
+const dashboardLinkClass =
+  'group inline-flex items-center gap-2 text-sm font-semibold text-foreground underline decoration-border decoration-2 underline-offset-[6px] transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/25';
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -100,14 +103,18 @@ export function DashboardPage() {
                 )}
 
                 {user.role === 'tenant_admin' && hasTenant && (
-                  <Link
-                    to={paths.documents}
-                    className="group inline-flex items-center gap-2 text-sm font-semibold text-foreground underline decoration-border decoration-2 underline-offset-[6px] transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/25"
-                  >
-                    <FileText className="size-4 text-primary" aria-hidden />
-                    {t.addDocuments}
-                    <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
-                  </Link>
+                  <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    <Link to={paths.documents} className={dashboardLinkClass}>
+                      <FileText className="size-4 text-primary" aria-hidden />
+                      {t.addDocuments}
+                      <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                    </Link>
+                    <Link to={paths.insights} className={dashboardLinkClass}>
+                      <BarChart3 className="size-4 text-primary" aria-hidden />
+                      {t.viewInsights}
+                      <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                    </Link>
+                  </div>
                 )}
               </div>
 
