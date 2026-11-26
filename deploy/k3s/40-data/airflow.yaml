@@ -57,6 +57,19 @@ spec:
             - {name: AICC_GEN, value: /opt/aicc/gen}
             - {name: TENANTS_DIR, value: /opt/aicc/tenants}
             - {name: QUALITY_HOME, value: /opt/airflow/quality}
+            # Quality: platform tenants (accounts_tenant ids) are known tenants too.
+            # Read-only role of the portal's Postgres, namespace aicc. The secret
+            # is created by hand (not in git): kubectl -n aicc-data create secret
+            # generic aicc-data-platform --from-literal=VOICE_READER_PASSWORD=...
+            - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-data-platform, key: VOICE_READER_PASSWORD}}}
+            - {name: PLATFORM_DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres.aicc.svc.cluster.local:5432/tenant_portal"}
+            # Serving: publish_insights writes analytics.* as aicc (dev password,
+            # as in data/postgres/init), and ensures the read-only `insights` role
+            # as the superuser (aicc cannot create roles).
+            - {name: ANALYTICS_DATABASE_URL, value: "postgresql://aicc:aicc@postgres:5432/aicc"}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: data-env, key: POSTGRES_PASSWORD}}}
+            - {name: ANALYTICS_ADMIN_DATABASE_URL, value: "postgresql://postgres:$(POSTGRES_PASSWORD)@postgres:5432/aicc"}
+            - {name: INSIGHTS_DB_PASSWORD, valueFrom: {secretKeyRef: {name: data-env, key: INSIGHTS_DB_PASSWORD}}}
           ports:
             - {name: http, containerPort: 8080}
           volumeMounts:
@@ -68,6 +81,7 @@ spec:
             - {name: jobs, mountPath: /opt/aicc/jobs, readOnly: true}
             - {name: gen, mountPath: /opt/aicc/gen, readOnly: true}
             - {name: quality, mountPath: /opt/aicc/quality, readOnly: true}
+            - {name: serving, mountPath: /opt/aicc/serving, readOnly: true}
             - {name: tenants, mountPath: /opt/aicc/tenants, readOnly: true}
             - {name: logs, mountPath: /opt/airflow/logs}
             - {name: quality-docs, mountPath: /opt/airflow/quality}
@@ -97,6 +111,8 @@ spec:
               - {key: events_pb2.py, path: aicallcenter/events/v1/events_pb2.py}
         - name: quality
           configMap: {name: quality-code}
+        - name: serving
+          configMap: {name: serving-code}
         - name: tenants
           configMap: {name: tenants}
         - name: logs
