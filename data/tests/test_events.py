@@ -68,7 +68,8 @@ def _field(number: int, payload: bytes) -> bytes:
 def test_forward_compat():
     print("forward compat — old reader, newer writer")
 
-    # A v1.1 writer added (a) a top-level field 15 and (b) a new payload type 100 (70-71 are now the sentiment payloads).
+    # A v1.1 writer added (a) a top-level field 15 and (b) a new payload type 100
+    # (70-71 are now the sentiment payloads).
     newer_field = sample().SerializeToString() + _field(15, b"eu-west")
     old = ev.Event.FromString(newer_field)
     check("unknown field does not break parsing", old.call_id.startswith("acme-"))

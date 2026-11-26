@@ -130,5 +130,19 @@ data:
     - changes:
         - data/**/*
         - libs/aicc_events/**/*         # generated copy of the event schema
+        - services/sentiment/gen/**/*   # another generated copy
         - tenants/**/*                  # quality checks read the tenant ids
+        - .gitlab-ci.yml
+
+sentiment:
+  extends: .child
+  trigger:
+    include: services/sentiment/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/sentiment/**/*
+        - data/proto/**/*               # the event schema it reads and writes
+        - ci/templates/**/*
         - .gitlab-ci.yml

@@ -70,7 +70,7 @@ schema-breaking:
   rules:
     - if: $MR_TARGET_BRANCH
 
-# data/gen/ and libs/aicc_events/events_pb2.* are committed, so they must match
+# data/gen/, libs/aicc_events/events_pb2.* and services/sentiment/gen/ are committed, so they must match
 # events.proto. Regenerate and compare: an edited .proto without a regenerated
 # library would publish events Spark cannot decode.
 schema-generated:
@@ -79,9 +79,11 @@ schema-generated:
   script:
     - pip install -q "$GRPCIO_TOOLS"
     - cp -r data/gen /tmp/gen-data && cp -r libs/aicc_events /tmp/gen-libs
+    - cp -r services/sentiment/gen /tmp/gen-sentiment
     - PYTHON=python data/gen.sh
     - |
-      if ! diff -r /tmp/gen-data data/gen || ! diff -r /tmp/gen-libs libs/aicc_events; then
+      if ! diff -r /tmp/gen-data data/gen || ! diff -r /tmp/gen-libs libs/aicc_events \
+         || ! diff -r /tmp/gen-sentiment services/sentiment/gen; then
         echo "generated code is stale: run data/gen.sh and commit the result"
         exit 1
       fi
