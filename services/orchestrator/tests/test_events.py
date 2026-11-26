@@ -72,16 +72,19 @@ def test_a_scripted_call_produces_its_events_in_order(tenant):
     assert [e.WhichOneof("payload") for e in events] == [
         "call_started",
         "turn_completed",          # the greeting, turn 0
+        "utterance_transcribed",   # what the caller said: the sentiment worker's input
         "turn_decided",
         "endpointing_changed",     # the shipment-ID slot needs a longer silence window
         "turn_completed",
         "call_ended",
     ]
     assert {r["key"] for r in producer.records} == {b"call-1"}
-    assert [e.seq for e in events] == [1, 2, 3, 4, 5, 6]
+    assert [e.seq for e in events] == [1, 2, 3, 4, 5, 6, 7]
     assert {e.tenant_id for e in events} == {"test-co"}
 
-    started, greeting, decided, endpointing, turn, ended = events
+    started, greeting, said, decided, endpointing, turn, ended = events
+    assert said.utterance_transcribed.text == "where is my parcel"
+    assert said.utterance_transcribed.language == "en"
     assert started.call_started.synthetic and started.call_started.channel == "simulator"
     assert greeting.turn_completed.turn_index == 0
     assert decided.turn_decided.kind == ev.TURN_KIND_SAY

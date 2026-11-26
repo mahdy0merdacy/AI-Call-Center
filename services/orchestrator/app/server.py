@@ -288,6 +288,13 @@ class OrchestratorServicer(pb_grpc.OrchestratorServicer):
                     if session.ended or getattr(session.agent, "ended", False):
                         log.info("[%s] call ended — ignoring transcript", session.call_id)
                         continue
+                    # What the caller said, as STT finalised it. The schema files
+                    # this under speech, but the orchestrator is the one producer
+                    # that sees every final, so it records it: the sentiment
+                    # worker classifies these, and silver builds turns from them.
+                    session.events.emit(utterance_transcribed=ev.UtteranceTranscribed(
+                        text=msg.transcript.text, end_sample=msg.transcript.at_sample,
+                        language=session.tenant.language))
                     if session.turn and not session.turn.done():
                         session.turn.cancel()
                     session.turn = asyncio.ensure_future(
