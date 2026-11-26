@@ -1,0 +1,69 @@
+# Insights API: each portal tenant's own call analytics, read from the data stack's
+# Postgres (DB aicc, schema analytics) as the read-only role `insights`. The portal's
+# web gateway proxies /api/insights/ here.
+#
+# Secrets it needs, created by hand (not in git):
+#   insights-jwt  JWT_PUBLIC_KEY        the portal's JWT public key (PEM; literal \n is fine)
+#   insights-db   INSIGHTS_DB_PASSWORD  password of the `insights` role, URL-safe
+#                                       (it is pasted into a URL), e.g. openssl rand -hex 24
+apiVersion: v1
+kind: Service
+metadata:
+  name: insights
+spec:
+  selector: {app: insights}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insights
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: insights}
+  template:
+    metadata:
+      labels: {app: insights}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      automountServiceAccountToken: false   # never talks to the Kubernetes API
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: insights
+          image: aicc/insights
+          env:
+            - name: INSIGHTS_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: insights-db, key: INSIGHTS_DB_PASSWORD}}
+            - name: ANALYTICS_DATABASE_URL
+              value: "postgresql://insights:$(INSIGHTS_DB_PASSWORD)@postgres:5432/aicc"
+            # Verifies the portal's JWTs with the public key only.
+            - name: JWT_PUBLIC_KEY
+              valueFrom: {secretKeyRef: {name: insights-jwt, key: JWT_PUBLIC_KEY}}
+            - {name: JWT_ISSUER, value: tenant-portal}
+            - {name: JWT_AUDIENCE, value: ai-voice-platform}
+          ports:
+            - {name: http, containerPort: 8000}
+          # Ready only when Postgres answers: the gateway then gets a 503 from the
+          # Service (no endpoints) instead of from every query.
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          # The process only: a Postgres outage must not restart it.
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

@@ -1,0 +1,16 @@
+# Layer 60: the insights API on predator (namespace aicc-data, next to the data
+# stack's Postgres it reads). Create the insights-jwt and insights-db Secrets first
+# (see insights.yaml), then:
+#   kubectl kustomize deploy/k3s/60-insights | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc-data
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-data}
+
+resources:
+  - insights.yaml
+
+images:
+  # Placeholder tag: set it to the image CI built (its short commit SHA).
+  - {name: aicc/insights, newName: 100.72.101.66:5001/aicc/insights, newTag: replace-me}
