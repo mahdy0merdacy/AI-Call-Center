@@ -24,9 +24,11 @@ import json
 import logging
 import re
 import time
+from datetime import date
 
 import aiohttp
 
+from .dates import say_dates
 from .flow import CallFlowState, Tenant, TurnAction, route_by_slot, route_scored
 from .knowledge import KnowledgeClient, KnowledgeError, Passage, SearchResult
 from .tools import ToolRegistry
@@ -66,7 +68,8 @@ class Agent:
         parts = [self.tenant.persona.strip()]
         parts.append(
             "You are speaking out loud on a phone call. Keep replies to one or two "
-            "short sentences. No markdown, no lists, no emoji."
+            "short sentences. No markdown, no lists, no emoji. Say every date in "
+            "words, exactly as the data below gives it; never write a date as digits."
         )
         if self.tenant.guardrails:
             parts.append("Rules you must follow:\n" +
@@ -106,6 +109,10 @@ class Agent:
                   "latency_ms": int((time.perf_counter() - t0) * 1000),
                   "took_ms": result.took_ms if result else 0, "error": error})
         return retrieval_prompt(self.tenant.display_name, result)
+
+    def _spoken_dates(self, text: str) -> str:
+        """ISO dates in `text` as words, in the tenant's language (app/dates.py)."""
+        return say_dates(text, self.state.today or date.today(), self.tenant.language)
 
     # -- LLM --------------------------------------------------------------
 
@@ -278,7 +285,7 @@ class Agent:
                             "Do not invent a result.")
             extra = (
                 f"The {action.flow.tool} tool returned this data:\n"
-                f"{json.dumps(result, ensure_ascii=False)}\n\n"
+                f"{self._spoken_dates(json.dumps(result, ensure_ascii=False))}\n\n"
                 f"How to respond: {guidance}\n"
                 "Use only the values above. Never invent a date, status or figure."
             )
@@ -326,7 +333,7 @@ class Agent:
                     pending = pending[len(clause):]
                     if self.cancelled:
                         break
-                    on_say(clause.strip())
+                    on_say(self._spoken_dates(clause.strip()))
         finally:
             # Reported even when the stream fails or is cut short by a barge-in.
             on_event({"type": "llm", "turn": self.turn_index, "model": self.model,
@@ -334,10 +341,12 @@ class Agent:
                       "total_ms": int((time.perf_counter() - t0) * 1000),
                       "cancelled": self.cancelled, **self.llm_stats})
 
+        # Spoken and recorded alike with dates in words, should the model still
+        # write one as digits. The ISO form stays in the tool_result event.
         tail = pending.strip()
         if tail and not self.cancelled:
-            on_say(tail)
-        return spoken.strip()
+            on_say(self._spoken_dates(tail))
+        return self._spoken_dates(spoken.strip())
 
     @staticmethod
     def _drain(buf: str):

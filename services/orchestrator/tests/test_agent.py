@@ -195,3 +195,42 @@ def test_slot_answers_are_reported_filled_or_rejected(tenant, monkeypatch):
     filled = _one(events, "slot")
     assert filled["ok"] is True and filled["attempt"] == 2
     assert filled["value"] == "AC4471X209" and filled["slot"] == "shipment_id"
+
+
+# ── dates in an LLM turn ─────────────────────────────────────────────────────
+
+
+def test_reschedule_dates_reach_the_llm_and_the_caller_as_words(tenant, monkeypatch):
+    # Live calls: TTS read "2026-10-03" out digit by digit, and the transcript
+    # had a different date format on every call.
+    from app.tools import ToolCall
+
+    async def fake_invoke(self, tool, args, **_):
+        return ToolCall({"outcome": "ok", "shipment_id": args["shipment_id"],
+                         "new_date": args["new_date"],
+                         "previous_estimate": "2026-09-30"}, latency_ms=1)
+
+    sent: list[list[dict]] = []
+
+    async def fake_llm(self, session, messages):
+        sent.append(messages)
+        self.llm_stats = {"ttft_ms": 1, "prompt_tokens": 0, "completion_tokens": 0}
+        for tok in ["Done, your parcel ", "now arrives 2026-", "10-03 instead."]:
+            yield tok
+
+    monkeypatch.setattr(ToolRegistry, "invoke", fake_invoke)
+    monkeypatch.setattr(Agent, "_stream_llm", fake_llm)
+    agent = _tracked(tenant)
+    _run_turn(agent, "reschedule my delivery")
+    events, said = _run_turn(agent, "the third of October")
+
+    # The tool gets the ISO date, and the event log keeps it.
+    assert _one(events, "tool_result")["data"]["new_date"] == "2026-10-03"
+    (messages,) = sent
+    system = messages[0]["content"]
+    assert '"new_date": "Saturday the third of October"' in system
+    assert "2026-10-03" not in system
+    # What the model wrote as digits is spoken and recorded in words.
+    spoken = "Done, your parcel now arrives Saturday the third of October instead."
+    assert " ".join(said) == spoken
+    assert _one(events, "turn_complete")["text"] == spoken

@@ -217,11 +217,12 @@ def test_a_platform_turn_with_no_match_is_told_the_documents_do_not_cover_it(mon
 
 
 def _system_before_retrieval(tenant, extra: str = "") -> str:
-    """Agent._system as it was before retrieval existed, verbatim."""
+    """Agent._system without retrieval, verbatim."""
     parts = [tenant.persona.strip()]
     parts.append(
         "You are speaking out loud on a phone call. Keep replies to one or two "
-        "short sentences. No markdown, no lists, no emoji."
+        "short sentences. No markdown, no lists, no emoji. Say every date in "
+        "words, exactly as the data below gives it; never write a date as digits."
     )
     if tenant.guardrails:
         parts.append("Rules you must follow:\n" +

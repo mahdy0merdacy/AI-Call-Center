@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from app.dates import parse_date
+from app.dates import parse_date, say_dates
 
 TODAY = date(2026, 9, 25)          # a Friday
 ESTIMATE = date(2026, 9, 30)       # the delivery being moved
@@ -61,3 +61,34 @@ def test_impossible_dates_are_refused(said):
 ])
 def test_no_date_said(said):
     assert parse_date(said, TODAY, ESTIMATE) is None
+
+
+# ── ISO dates -> words, for what the agent says ─────────────────────────────
+
+
+@pytest.mark.parametrize("iso, en, fr", [
+    ("2026-10-03", "Saturday the third of October", "samedi 3 octobre"),
+    ("2026-10-21", "Wednesday the twenty-first of October", "mercredi 21 octobre"),
+    ("2027-01-01", "Friday the first of January 2027", "vendredi 1er janvier 2027"),
+    ("2026-09-26T14:12:00", "Saturday the twenty-sixth of September at 2:12 pm",
+     "samedi 26 septembre à 14 h 12"),
+    ("2026-10-02T12:00:00Z", "Friday the second of October at noon",
+     "vendredi 2 octobre à 12 h"),
+])
+def test_iso_dates_are_said_in_words(iso, en, fr):
+    assert say_dates(iso, TODAY) == en
+    assert say_dates(iso, TODAY, "fr") == fr
+
+
+def test_dates_inside_text_and_json_are_rewritten_in_place():
+    data = '{"new_date": "2026-10-03", "previous_estimate": "2026-09-30"}'
+    assert say_dates(data, TODAY) == (
+        '{"new_date": "Saturday the third of October", '
+        '"previous_estimate": "Wednesday the thirtieth of September"}')
+    assert (say_dates("Done, it now arrives 2026-10-03.", TODAY)
+            == "Done, it now arrives Saturday the third of October.")
+
+
+@pytest.mark.parametrize("text", ["2026-09-31", "AC4471X209", "ref 2026-10-03-7", "no date"])
+def test_what_is_not_a_date_is_left_alone(text):
+    assert say_dates(text, TODAY) == text

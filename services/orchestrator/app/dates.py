@@ -155,3 +155,68 @@ def parse_date(text: str, today: date, base: date | None = None) -> date | None:
         return today + timedelta(days=ahead)
 
     return None
+
+
+# ── ISO dates -> words, for what the agent says ─────────────────────────────
+#
+# Tools return ISO dates ("2026-10-03"). Handed those raw, the LLM said them
+# however it liked: TTS read "twenty twenty-six dash ten dash zero three", and
+# the transcript recorded "10/03/2026" on one call and "Oct 3rd" on the next.
+# So dates are put into words here, the same way every time, before the model
+# sees them; say_dates() runs again on what it says, for any it wrote itself.
+
+_ISO = re.compile(
+    r"\b(\d{4})-(\d{2})-(\d{2})"
+    r"(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?(?![\d-])"
+)
+
+_ORDINAL_WORDS = {n: w for w, n in ORDINALS.items() if " " not in w}
+_EN_MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December"]
+_EN_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+              "août", "septembre", "octobre", "novembre", "décembre"]
+_FR_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+
+def say_date(d: date, today: date, lang: str = "en") -> str:
+    """2026-10-03 -> 'Saturday the third of October' (fr: 'samedi 3 octobre').
+
+    The year is said only when it is not this year's.
+    """
+    year = f" {d.year}" if d.year != today.year else ""
+    if lang == "fr":
+        day = "1er" if d.day == 1 else str(d.day)
+        return f"{_FR_DAYS[d.weekday()]} {day} {_FR_MONTHS[d.month - 1]}{year}"
+    return (f"{_EN_DAYS[d.weekday()]} the {_ORDINAL_WORDS[d.day]} "
+            f"of {_EN_MONTHS[d.month - 1]}{year}")
+
+
+def _say_time(hour: int, minute: int, lang: str) -> str:
+    if lang == "fr":
+        return f"à {hour} h {minute:02d}" if minute else f"à {hour} h"
+    if (hour, minute) == (12, 0):
+        return "at noon"
+    if (hour, minute) == (0, 0):
+        return "at midnight"
+    h = hour % 12 or 12
+    suffix = "am" if hour < 12 else "pm"
+    return f"at {h}:{minute:02d} {suffix}" if minute else f"at {h} {suffix}"
+
+
+def say_dates(text: str, today: date, lang: str = "en") -> str:
+    """Every ISO date or date-time in `text`, put into words. Anything that is
+    not a real date (2026-09-31) is left as it is."""
+
+    def spoken(m: re.Match) -> str:
+        d = _build(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if d is None:
+            return m.group(0)
+        out = say_date(d, today, lang)
+        if m.group(4) is not None:
+            hour, minute = int(m.group(4)), int(m.group(5))
+            if hour < 24 and minute < 60:
+                out += " " + _say_time(hour, minute, lang)
+        return out
+
+    return _ISO.sub(spoken, text)
