@@ -34,7 +34,7 @@ configMapGenerator:
       - ../../../tenants/fixtures/knowledge/swiftnet-faq.md
 
 images:
-  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: 8b85f4f}
+  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: 9a89c22}
   - {name: aicc/media-edge, newName: 100.72.101.66:5001/aicc/media-edge, newTag: edge-11261044}
   - {name: aicc/mcp-servers, newName: 100.72.101.66:5001/aicc/mcp-servers, newTag: 00e23cc}
   - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: 00e23cc}
