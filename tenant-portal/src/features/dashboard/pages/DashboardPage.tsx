@@ -1,9 +1,9 @@
 /**
- * Placeholder dashboard (the real one is out of scope): proves the
- * sign-in flow end to end and offers sign-out.
+ * Signed-in home: a sample call replaying the tenant's own process on the call
+ * console, the button to call the real agent, and the account summary.
  */
-import { LogOut, Settings } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { ArrowRight, Building2, FileText, LogOut, Settings } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthedUser } from '@/app/guards';
 import { paths } from '@/app/paths';
@@ -12,7 +12,8 @@ import { Stagger, StaggerItem } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WaveformVisual } from '@/components/ui/WaveformVisual';
+import { CallConsole, LiveDot } from '@/components/voice/CallConsole';
+import { callsForTenant } from '@/components/voice/demoCalls';
 import { useCurrentTenant } from '@/features/auth/hooks/useCurrentUser';
 import { useSession } from '@/features/auth/session/SessionProvider';
 import { messages } from '@/i18n';
@@ -32,7 +33,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 export function DashboardPage() {
   const user = useAuthedUser();
-  const tenant = useCurrentTenant(user.tenant_id !== null);
+  const hasTenant = user.tenant_id !== null;
+  const tenant = useCurrentTenant(hasTenant);
   const { signOut } = useSession();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -43,28 +45,80 @@ export function DashboardPage() {
 
   const displayName = user.full_name || user.email;
   const tenantSlug = tenant.data?.slug ?? user.tenant_slug;
+  const tenantName = tenant.data?.name ?? user.tenant_name;
+  const calls = useMemo(() => callsForTenant(tenantSlug), [tenantSlug]);
   useDocumentTitle(messages.nav.dashboard);
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="relative isolate min-h-dvh bg-background">
+      <div
+        aria-hidden
+        className="paper-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[640px] [mask-image:linear-gradient(to_bottom,black_20%,transparent)]"
+      />
       <AppHeader />
 
-      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-10 focus:outline-none sm:px-6">
-        <Stagger className="space-y-8">
-          <StaggerItem className="mesh-bg grain relative overflow-hidden rounded-2xl p-8 text-white">
-            <h1 className="text-3xl font-bold">{t.welcome(displayName)}</h1>
-            <p className="mt-2 max-w-xl text-white/75">{t.description}</p>
-            <div className="mt-6 h-14 opacity-90">
-              <WaveformVisual bars={72} intensity={0.9} />
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 py-8 focus:outline-none sm:px-6 sm:py-14">
+        <Stagger className="space-y-12">
+          <StaggerItem>
+            <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)] lg:gap-14">
+              <div className="space-y-8">
+                <div className="space-y-5">
+                  <div className="flex items-center gap-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                    <LiveDot />
+                    {hasTenant ? (
+                      tenant.isPending && !tenantName ? (
+                        <Skeleton className="h-3.5 w-28" />
+                      ) : (
+                        (tenantName ?? '—')
+                      )
+                    ) : (
+                      messages.roles[user.role]
+                    )}
+                  </div>
+                  <h1 className="font-serif text-[2.9rem] font-normal leading-[0.95] tracking-[-0.015em] [overflow-wrap:anywhere] sm:text-[4.2rem]">
+                    {t.welcome}
+                    <br />
+                    <em className="text-primary">{displayName}</em>
+                  </h1>
+                  <p className="max-w-md text-[15.5px] leading-relaxed text-muted-foreground">
+                    {hasTenant ? t.description : t.descriptionPlatform}
+                  </p>
+                </div>
+
+                {hasTenant ? (
+                  <TestAgentCard slug={tenantSlug} loading={tenantSlug === null && tenant.isPending} />
+                ) : (
+                  user.role === 'platform_admin' && (
+                    <Button asChild size="lg" variant="outline" className="rounded-full">
+                      <Link to={paths.adminTenants}>
+                        <Building2 className="size-4" aria-hidden />
+                        {t.manageTenants}
+                        <ArrowRight className="size-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  )
+                )}
+
+                {user.role === 'tenant_admin' && hasTenant && (
+                  <Link
+                    to={paths.documents}
+                    className="group inline-flex items-center gap-2 text-sm font-semibold text-foreground underline decoration-border decoration-2 underline-offset-[6px] transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/25"
+                  >
+                    <FileText className="size-4 text-primary" aria-hidden />
+                    {t.addDocuments}
+                    <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </Link>
+                )}
+              </div>
+
+              <CallConsole
+                calls={calls}
+                controls
+                className="shadow-[0_40px_80px_-40px_hsl(var(--shadow-color)/0.55)]"
+                transcriptClassName="h-[300px] sm:h-[330px]"
+              />
             </div>
           </StaggerItem>
-
-          {/* Platform admins have no agent of their own to call. */}
-          {user.tenant_id !== null && (
-            <StaggerItem>
-              <TestAgentCard slug={tenantSlug} loading={tenantSlug === null && tenant.isPending} />
-            </StaggerItem>
-          )}
 
           <StaggerItem>
             <Card>
@@ -94,12 +148,12 @@ export function DashboardPage() {
                   <Row label={t.email}>{user.email}</Row>
                   <Row label={t.role}>{messages.roles[user.role]}</Row>
                   <Row label={t.organization}>
-                    {user.tenant_id === null ? (
+                    {!hasTenant ? (
                       t.noOrganization
                     ) : tenant.isPending ? (
                       <Skeleton className="h-4 w-32" />
                     ) : (
-                      (tenant.data?.name ?? user.tenant_name ?? '—')
+                      (tenantName ?? '—')
                     )}
                   </Row>
                   <Row label={t.mfa}>{user.mfa_enabled ? t.enabled : t.disabled}</Row>

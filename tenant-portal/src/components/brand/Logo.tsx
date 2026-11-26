@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import { messages } from '@/i18n';
 import { env } from '@/lib/env';
 import { cn } from '@/lib/utils';
@@ -11,23 +10,16 @@ interface LogoProps {
 }
 
 export function LogoMark({ className }: { className?: string }) {
-  // React ids contain ':' which breaks `url(#…)` references in some browsers.
-  const gradientId = `logo-${useId().replace(/:/g, '')}`;
+  // A signal-red tile carrying a spoken waveform; the last bar is the reply.
   return (
     <svg viewBox="0 0 32 32" className={cn('size-8', className)} aria-hidden>
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="hsl(var(--brand-indigo))" />
-          <stop offset="1" stopColor="hsl(var(--brand-violet))" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="9" fill={`url(#${gradientId})`} />
-      <g fill="#fff">
-        <rect x="7" y="13" width="3" height="6" rx="1.5" />
-        <rect x="12" y="9" width="3" height="14" rx="1.5" />
-        <rect x="17" y="6" width="3" height="20" rx="1.5" />
-        <rect x="22" y="11" width="3" height="10" rx="1.5" fill="hsl(var(--brand-teal))" />
+      <rect width="32" height="32" rx="8" fill="hsl(var(--brand-signal))" />
+      <g fill="hsl(var(--brand-ink))">
+        <rect x="6.5" y="13" width="3" height="6" rx="1.5" />
+        <rect x="11.5" y="8.5" width="3" height="15" rx="1.5" />
+        <rect x="16.5" y="5.5" width="3" height="21" rx="1.5" />
       </g>
+      <rect x="21.5" y="11" width="3" height="10" rx="1.5" fill="hsl(40 40% 97%)" />
     </svg>
   );
 }
@@ -40,16 +32,16 @@ export function Logo({ className, inverted = false, showWordmark = true }: LogoP
         <span className="flex flex-col leading-none">
           <span
             className={cn(
-              'text-[15px] font-bold tracking-tight',
-              inverted ? 'text-white' : 'text-foreground',
+              'font-serif text-[20px] tracking-[-0.01em]',
+              inverted ? 'text-brand-cream' : 'text-foreground',
             )}
           >
             {env.appName}
           </span>
           <span
             className={cn(
-              'mt-1 text-[11px] font-medium uppercase tracking-[0.12em]',
-              inverted ? 'text-white/60' : 'text-muted-foreground',
+              'mt-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.18em]',
+              inverted ? 'text-brand-cream/55' : 'text-muted-foreground',
             )}
           >
             {messages.brand.tagline}

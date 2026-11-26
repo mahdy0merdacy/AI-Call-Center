@@ -23,7 +23,7 @@ export function ProfilePage() {
       <main id="main" tabIndex={-1} className="mx-auto max-w-3xl px-4 py-10 focus:outline-none sm:px-6">
         <Stagger className="space-y-6">
           <StaggerItem>
-            <h1 className="text-3xl font-bold">{t.title}</h1>
+            <h1 className="font-serif text-[2.6rem] font-normal leading-none tracking-[-0.01em]">{t.title}</h1>
             <p className="mt-1 text-muted-foreground">{t.description}</p>
           </StaggerItem>
           <StaggerItem>

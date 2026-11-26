@@ -79,7 +79,7 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, AppErro
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
         <div role="alert" className="max-w-md space-y-4 text-center">
-          <h1 className="text-2xl font-bold">{t.title}</h1>
+          <h1 className="font-serif text-[2.2rem] font-normal leading-tight">{t.title}</h1>
           <p className="text-muted-foreground">{t.body}</p>
           <div className="flex justify-center gap-3">
             <button

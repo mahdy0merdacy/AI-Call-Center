@@ -1,4 +1,6 @@
-@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/schibsted-grotesk';
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
 @import '@fontsource-variable/jetbrains-mono';
 @import './tokens.css';
 
@@ -18,7 +20,6 @@
 
   body {
     @apply bg-background font-sans text-foreground antialiased;
-    font-feature-settings: 'ss01', 'cv11';
   }
 
   h1,
@@ -38,24 +39,39 @@
 }
 
 @layer components {
-  /* Soft animated gradient mesh used by the branded panel. */
-  .mesh-bg {
-    background-color: hsl(var(--brand-navy));
+  /*
+   * The call console surface: warm ink with a faint engineering grid and a
+   * soft signal glow low in the frame, like a lit desk in a dark studio.
+   */
+  .console-bg {
+    background-color: hsl(var(--brand-ink));
     background-image:
-      radial-gradient(60% 50% at 15% 10%, hsl(var(--brand-indigo) / 0.55) 0%, transparent 60%),
-      radial-gradient(50% 45% at 90% 20%, hsl(var(--brand-violet) / 0.45) 0%, transparent 60%),
-      radial-gradient(55% 50% at 70% 95%, hsl(var(--brand-teal) / 0.28) 0%, transparent 60%),
-      linear-gradient(180deg, hsl(var(--brand-navy-2)) 0%, hsl(var(--brand-navy)) 100%);
+      radial-gradient(70% 45% at 85% 100%, hsl(var(--brand-signal) / 0.16) 0%, transparent 70%),
+      radial-gradient(50% 35% at 0% 0%, hsl(var(--brand-amber) / 0.06) 0%, transparent 70%),
+      linear-gradient(hsl(var(--brand-cream) / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--brand-cream) / 0.035) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      100% 100%,
+      28px 28px,
+      28px 28px;
   }
 
-  .glass {
-    background: hsl(0 0% 100% / 0.08);
-    border: 1px solid hsl(0 0% 100% / 0.14);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  /* Paper surface with the same grid, much fainter: the signed-in hero. */
+  .paper-grid {
+    background-image:
+      linear-gradient(hsl(var(--foreground) / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* An inset panel on the console (transcript, readouts). */
+  .console-panel {
+    background: hsl(var(--brand-ink-2));
+    border: 1px solid hsl(var(--brand-cream) / 0.1);
     box-shadow:
-      0 1px 0 hsl(0 0% 100% / 0.08) inset,
-      0 20px 40px -18px hsl(230 70% 2% / 0.6);
+      0 1px 0 hsl(var(--brand-cream) / 0.05) inset,
+      0 30px 60px -30px hsl(0 0% 0% / 0.7);
   }
 
   .grain::after {
@@ -63,21 +79,39 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.06;
+    opacity: 0.07;
     mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  .text-gradient {
-    background: linear-gradient(
-      100deg,
-      hsl(0 0% 100%) 0%,
-      hsl(var(--brand-violet) / 0.95) 55%,
-      hsl(var(--brand-teal)) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  /* Older transcript lines fade out at the top instead of scrolling. */
+  .fade-top {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 28%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 28%);
+  }
+
+  /* Typing caret for the agent's reply. */
+  .type-caret {
+    display: inline-block;
+    width: 0.55ch;
+    height: 1.05em;
+    margin-left: 1px;
+    vertical-align: -0.15em;
+    background: currentColor;
+    animation: caret-blink 1s steps(1) infinite;
+  }
+
+  /* A word the speech recogniser hasn't committed yet. */
+  .asr-partial {
+    opacity: 0.5;
+    text-decoration: underline dotted hsl(var(--voice-caller) / 0.6);
+    text-underline-offset: 4px;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
   }
 }
 

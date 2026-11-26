@@ -18,8 +18,8 @@ export function EnvelopeIllustration({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="hsl(var(--brand-indigo))" />
-          <stop offset="1" stopColor="hsl(var(--brand-violet))" />
+          <stop offset="0" stopColor="hsl(var(--brand-signal))" />
+          <stop offset="1" stopColor="hsl(var(--brand-amber))" />
         </linearGradient>
       </defs>
       {/* back of the envelope */}
@@ -31,10 +31,10 @@ export function EnvelopeIllustration({ className }: { className?: string }) {
         transition={{ delay: 0.45, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
       >
         <rect x="26" y="18" width="68" height="54" rx="6" className="fill-card" stroke="hsl(var(--border))" />
-        <rect x="35" y="29" width="34" height="5" rx="2.5" fill="hsl(var(--brand-indigo))" opacity="0.7" />
+        <rect x="35" y="29" width="34" height="5" rx="2.5" fill="hsl(var(--brand-signal))" opacity="0.7" />
         <rect x="35" y="40" width="50" height="4" rx="2" fill="hsl(var(--muted-foreground))" opacity="0.3" />
         <rect x="35" y="49" width="42" height="4" rx="2" fill="hsl(var(--muted-foreground))" opacity="0.3" />
-        <circle cx="82" cy="31" r="5" fill="hsl(var(--brand-teal))" />
+        <circle cx="82" cy="31" r="5" fill="hsl(var(--brand-phosphor))" />
       </motion.g>
       {/* front pocket */}
       <path d="M14 46 L60 74 L106 46 V86 a8 8 0 0 1 -8 8 H22 a8 8 0 0 1 -8 -8 Z" fill={fill} />

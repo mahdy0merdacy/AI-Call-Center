@@ -1,9 +1,8 @@
 import { motion } from 'framer-motion';
 import { LogoMark } from '@/components/brand/Logo';
+import { WaveformVisual } from '@/components/ui/WaveformVisual';
 import { messages } from '@/i18n';
 import { env } from '@/lib/env';
-
-const BAR_DELAYS = [0, 0.15, 0.3, 0.45, 0.3, 0.15, 0];
 
 /** Branded full-screen loader shown while the session is restored on boot. */
 export function SplashScreen({ label = messages.splash.restoring }: { label?: string }) {
@@ -11,27 +10,21 @@ export function SplashScreen({ label = messages.splash.restoring }: { label?: st
     <div
       role="status"
       aria-live="polite"
-      className="mesh-bg grain relative flex min-h-dvh flex-col items-center justify-center overflow-hidden text-white"
+      className="console-bg grain relative flex min-h-dvh flex-col items-center justify-center overflow-hidden text-brand-cream"
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.94 }}
+        initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4 }}
-        className="flex flex-col items-center gap-6"
+        className="flex w-full max-w-xs flex-col items-center gap-6 px-6"
       >
-        <LogoMark className="size-14 drop-shadow-[0_10px_30px_hsl(var(--brand-indigo)/0.6)]" />
-        <div className="flex h-8 items-center gap-1.5" aria-hidden>
-          {BAR_DELAYS.map((delay, index) => (
-            <span
-              key={index}
-              className="h-full w-1.5 origin-center animate-bar-bounce rounded-full bg-gradient-to-b from-brand-violet to-brand-teal"
-              style={{ animationDelay: `${delay}s` }}
-            />
-          ))}
+        <LogoMark className="size-14 drop-shadow-[0_12px_30px_hsl(var(--brand-signal)/0.45)]" />
+        <div className="h-10 w-full" aria-hidden>
+          <WaveformVisual voice="thinking" bars={28} />
         </div>
         <div className="text-center">
-          <p className="text-sm font-semibold tracking-tight">{env.appName}</p>
-          <p className="mt-1 text-sm text-white/65">{label}</p>
+          <p className="font-serif text-2xl leading-none">{env.appName}</p>
+          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.16em] text-brand-cream/60">{label}</p>
         </div>
       </motion.div>
     </div>

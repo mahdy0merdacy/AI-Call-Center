@@ -1,145 +1,80 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { CalendarCheck2, PhoneIncoming, Sparkles, type LucideIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Logo } from '@/components/brand/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { WaveformVisual } from '@/components/ui/WaveformVisual';
+import { CallConsole, CallTicker } from '@/components/voice/CallConsole';
+import { demoCalls } from '@/components/voice/demoCalls';
 import { messages } from '@/i18n';
 import { cn } from '@/lib/utils';
 
-const floatingIcons: LucideIcon[] = [PhoneIncoming, CalendarCheck2, Sparkles];
-
-const floatingPositions = [
-  'left-[4%] top-[2%]',
-  'right-[2%] top-[38%]',
-  'left-[10%] bottom-[2%]',
-];
-
-function FloatingCard({ index }: { index: number }) {
-  const reduceMotion = useReducedMotion();
-  const item = messages.brand.floating[index];
-  const Icon = floatingIcons[index];
-  if (!item || !Icon) return null;
-
-  return (
-    <motion.div
-      className={cn('glass absolute z-10 flex items-center gap-3 rounded-xl px-3.5 py-3', floatingPositions[index])}
-      initial={{ opacity: 0, y: 16, scale: 0.96 }}
-      animate={
-        reduceMotion
-          ? { opacity: 1, y: 0, scale: 1 }
-          : { opacity: 1, y: [0, -8, 0], scale: 1 }
-      }
-      transition={{
-        opacity: { duration: 0.6, delay: 0.3 + index * 0.18 },
-        scale: { duration: 0.6, delay: 0.3 + index * 0.18 },
-        y: reduceMotion
-          ? { duration: 0.6 }
-          : { duration: 6 + index, repeat: Infinity, ease: 'easeInOut', delay: index * 0.8 },
-      }}
-    >
-      <span className="flex size-9 items-center justify-center rounded-lg bg-white/10 text-white">
-        <Icon className="size-[18px]" aria-hidden />
-      </span>
-      <span className="pr-1">
-        <span className="block text-[13px] font-semibold text-white">{item.title}</span>
-        <span className="block text-xs text-white/65">{item.body}</span>
-      </span>
-    </motion.div>
-  );
-}
-
-function LiveTranscript() {
-  const lines = messages.brand.transcript;
-  const [index, setIndex] = useState(0);
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const id = window.setInterval(() => setIndex((value) => (value + 1) % lines.length), 3600);
-    return () => window.clearInterval(id);
-  }, [lines.length, reduceMotion]);
-
-  return (
-    <div className="glass relative overflow-hidden rounded-2xl px-5 py-4">
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/60">
-        <span className="relative flex size-2">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand-teal opacity-60" />
-          <span className="relative inline-flex size-2 rounded-full bg-brand-teal" />
-        </span>
-        {messages.brand.liveCall}
-      </div>
-      <div className="relative h-11">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={index}
-            initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
-            transition={{ duration: 0.45 }}
-            className="absolute inset-0 text-[15px] leading-snug text-white/90"
-          >
-            {lines[index]}
-          </motion.p>
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-/** Right-hand marketing panel of the auth split layout (desktop only). */
+/**
+ * Right-hand panel of the auth split layout (desktop only): the pitch, then a
+ * sample call replaying live on the console.
+ */
 export function BrandPanel({ className }: { className?: string }) {
   return (
     <aside
       aria-hidden
       className={cn(
-        'mesh-bg grain relative isolate flex-col overflow-hidden p-10 text-white xl:p-14',
+        'console-bg grain relative isolate flex-col overflow-hidden p-8 text-brand-cream xl:p-12',
         className,
       )}
     >
-      {/* Drifting colour blobs */}
-      <div className="pointer-events-none absolute -left-24 -top-24 -z-10 size-[28rem] animate-drift rounded-full bg-brand-indigo/40 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 right-[-6rem] -z-10 size-[30rem] animate-drift-slow rounded-full bg-brand-teal/20 blur-3xl" />
-      <div className="pointer-events-none absolute right-1/4 top-1/3 -z-10 size-72 animate-drift rounded-full bg-brand-violet/30 blur-3xl [animation-delay:-6s]" />
-
       <Logo inverted />
 
-      <div className="relative flex flex-1 items-center">
-        <div className="relative h-[340px] w-full">
-          <div className="absolute inset-x-0 top-1/2 h-40 -translate-y-1/2 opacity-95">
-            <WaveformVisual bars={64} />
-          </div>
-          {messages.brand.floating.map((_, index) => (
-            <FloatingCard key={index} index={index} />
-          ))}
-        </div>
-      </div>
-
-      <div className="relative max-w-lg space-y-6">
+      <div className="mt-8 max-w-xl xl:mt-12">
         <motion.h2
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="text-4xl font-bold leading-[1.1] xl:text-[2.75rem]"
+          transition={{ duration: 0.7, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          className="font-serif text-[2.6rem] font-normal leading-[0.98] tracking-[-0.01em] xl:text-[3.4rem] 2xl:text-[4rem]"
         >
           {messages.brand.headline}
           <br />
-          <span className="text-gradient">{messages.brand.headlineAccent}</span>
+          <em className="text-brand-signal">{messages.brand.headlineAccent}</em>
         </motion.h2>
-        <p className="text-[15px] leading-relaxed text-white/70">{messages.brand.description}</p>
-        <LiveTranscript />
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.7, delay: 0.3 }}
+          className="mt-5 max-w-md text-[15px] leading-relaxed text-brand-cream/65 [@media(max-height:820px)]:hidden"
+        >
+          {messages.brand.description}
+        </motion.p>
       </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="mt-8 flex min-h-0 flex-1 flex-col"
+      >
+        <CallConsole
+          calls={demoCalls}
+          className="min-h-0 flex-1"
+          transcriptClassName="h-auto min-h-[150px] flex-1"
+        />
+      </motion.div>
+
+      <dl className="mt-6 grid grid-cols-3 gap-4 border-t border-brand-cream/10 pt-5 [@media(max-height:720px)]:hidden">
+        {messages.brand.proof.map((item) => (
+          <div key={item.value} className="min-w-0">
+            <dt className="font-serif text-2xl leading-none text-brand-cream xl:text-[1.7rem]">{item.value}</dt>
+            <dd className="mt-1.5 text-xs leading-snug text-brand-cream/50">{item.label}</dd>
+          </div>
+        ))}
+      </dl>
     </aside>
   );
 }
 
-const onDarkControl = 'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white';
+const onDarkControl =
+  'border-brand-cream/20 bg-brand-cream/10 text-brand-cream hover:bg-brand-cream/20 hover:text-brand-cream';
 
-/** Compact gradient header replacing the brand panel on small screens. */
+/** Compact console header replacing the brand panel on small screens. */
 export function MobileBrandHeader({ className }: { className?: string }) {
   return (
-    <div className={cn('mesh-bg relative overflow-hidden px-5 pb-5 pt-5 text-white', className)}>
+    <div className={cn('console-bg relative overflow-hidden px-5 pb-4 pt-5 text-brand-cream', className)}>
       <div className="flex items-center justify-between">
         <Logo inverted />
         <div className="flex items-center gap-2">
@@ -147,9 +82,7 @@ export function MobileBrandHeader({ className }: { className?: string }) {
           <ThemeToggle className={onDarkControl} />
         </div>
       </div>
-      <div className="mt-4 h-10 opacity-90">
-        <WaveformVisual bars={36} intensity={0.85} />
-      </div>
+      <CallTicker calls={demoCalls} className="mt-4" />
     </div>
   );
 }

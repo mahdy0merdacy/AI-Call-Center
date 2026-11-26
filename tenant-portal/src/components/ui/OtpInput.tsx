@@ -155,8 +155,8 @@ export const OtpInput = forwardRef<OtpInputHandle, OtpInputProps>(
               className={cn(
                 'h-14 w-full rounded-xl border border-input bg-background text-center font-mono text-2xl font-semibold text-foreground shadow-sm caret-primary sm:h-16',
                 'transition-[border-color,box-shadow,background-color] duration-200',
-                'focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20',
-                digit && 'border-primary/50 bg-accent/40',
+                'focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20',
+                digit && 'border-foreground/35 bg-muted/60',
                 invalid && 'border-destructive bg-destructive/[0.04] focus-visible:ring-destructive/20',
                 'disabled:cursor-not-allowed disabled:opacity-60',
               )}

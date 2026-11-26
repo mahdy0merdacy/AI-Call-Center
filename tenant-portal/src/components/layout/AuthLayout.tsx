@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { messages } from '@/i18n';
 import { env } from '@/lib/env';
 import { useDocumentTitle } from '@/lib/hooks/useDocumentTitle';
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 
 const footerLinks = [
@@ -46,11 +47,13 @@ export function AuthLayout({
   className,
 }: AuthLayoutProps) {
   useDocumentTitle(documentTitle ?? (typeof title === 'string' ? title : null));
+  // Mount one of the two animated call views, not both.
+  const desktop = useMediaQuery('(min-width: 1024px)');
 
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <div className="relative flex min-w-0 flex-col">
-        <MobileBrandHeader className="lg:hidden" />
+        {!desktop && <MobileBrandHeader />}
 
         <header className="hidden items-center justify-between px-10 py-6 lg:flex">
           <Logo />
@@ -66,7 +69,7 @@ export function AuthLayout({
           className="flex flex-1 items-start justify-center px-4 pb-10 pt-6 focus:outline-none sm:items-center sm:px-10 lg:pt-0"
         >
           <div className={cn('w-full', wide ? 'max-w-[560px]' : 'max-w-[440px]', className)}>
-            <Stagger className="rounded-2xl border-border/70 sm:border sm:bg-card sm:p-9 sm:shadow-card">
+            <Stagger className="rounded-2xl border-border/80 sm:border sm:bg-card sm:p-9 sm:shadow-card">
               {(icon || title || description) && (
                 <div className="mb-7 space-y-2">
                   {icon && <StaggerItem className="mb-5">{icon}</StaggerItem>}
@@ -74,7 +77,7 @@ export function AuthLayout({
                     <StaggerItem>
                       <h1
                         id="page-title"
-                        className="text-[1.65rem] font-bold leading-tight text-foreground"
+                        className="font-serif text-[2.35rem] font-normal leading-[1.02] tracking-[-0.01em] text-foreground"
                       >
                         {title}
                       </h1>
@@ -114,7 +117,7 @@ export function AuthLayout({
         </footer>
       </div>
 
-      <BrandPanel className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh" />
+      {desktop && <BrandPanel className="sticky top-0 flex h-dvh" />}
     </div>
   );
 }

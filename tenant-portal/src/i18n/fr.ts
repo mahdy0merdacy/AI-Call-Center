@@ -26,17 +26,31 @@ export const fr: Messages = {
     description:
       'Votre agent IA décroche, suit le processus de votre entreprise, consulte vos vraies données et répond à voix haute en moins de deux secondes, en français ou en anglais.',
     liveCall: 'Appel en cours',
-    floating: [
-      { title: 'Appel entrant', body: 'Réponse de l’agent en 1,6 s' },
-      { title: 'Colis AC1199Z044', body: 'Retardé · nouvelle date envoyée' },
-      { title: 'Processus appliqué', body: 'Identifiant vérifié avant toute réponse' },
+    proof: [
+      { value: '< 2 s', label: 'pour répondre à voix haute' },
+      { value: 'FR · EN', label: 'un agent, deux langues' },
+      { value: 'ID d’abord', label: 'processus vérifié avant toute réponse' },
     ],
-    transcript: [
-      '« Bonjour, je dois arroser ma monstera tous les combien ? »',
-      '« Quand les trois premiers centimètres du terreau sont secs, environ une fois par semaine en été. »',
-      '« Et vous livrez à Nantes ? »',
-      '« Oui, sous 48 h pour 6 €, et c’est gratuit dès 80 € d’achat. »',
-    ],
+  },
+  voice: {
+    caller: 'Client',
+    agent: 'Agent',
+    thinking: 'Réflexion',
+    live: 'En direct',
+    sample: 'Appel exemple',
+    replay: 'Rejouer l’appel',
+    ended: (duration: string) => `Appel terminé · ${duration} · sans transfert`,
+    speaker: (name: string) => `voix ${name}`,
+    transcriptTitle: (tenant: string) => `Appel exemple avec ${tenant}`,
+    stages: { stt: 'Écoute', llm: 'Réfléchit', tts: 'Parle' },
+    events: {
+      intent: 'intention',
+      slot: 'champ',
+      tool: 'outil',
+      knowledge: 'docs',
+      rule: 'règle',
+      end: 'fin',
+    },
   },
   footer: {
     privacy: 'Confidentialité',
@@ -155,8 +169,13 @@ export const fr: Messages = {
     accountErrorTitle: 'Impossible de charger votre compte',
   },
   dashboard: {
-    welcome: (name: string) => `Bienvenue, ${name}`,
-    description: 'Vous êtes connecté. Le tableau de bord de votre agent IA sera ici.',
+    welcome: 'Bienvenue,',
+    description:
+      'Votre agent IA répond à chaque appel avec la voix de votre entreprise et suit votre processus, étape par étape. Regardez un appel exemple, puis testez-le vous-même.',
+    descriptionPlatform:
+      'Les agents de toutes les entreprises tournent sur cette plateforme. Voici à quoi ressemblent leurs appels, du premier au dernier mot.',
+    addDocuments: 'Enrichir avec des documents',
+    manageTenants: 'Gérer les entreprises',
     scopeNote:
       'Le tableau de bord ne fait pas partie de cette version. Cette page sert à tester le parcours de connexion de bout en bout.',
     accountTitle: 'Votre compte',

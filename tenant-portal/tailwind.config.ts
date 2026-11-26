@@ -9,7 +9,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Plus Jakarta Sans Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['"Schibsted Grotesk Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['"Instrument Serif"', 'ui-serif', 'Georgia', 'serif'],
         mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
@@ -29,11 +30,17 @@ export default {
         card: { DEFAULT: token('card'), foreground: token('card-foreground') },
         popover: { DEFAULT: token('popover'), foreground: token('popover-foreground') },
         brand: {
-          navy: token('brand-navy'),
-          'navy-2': token('brand-navy-2'),
-          indigo: token('brand-indigo'),
-          violet: token('brand-violet'),
-          teal: token('brand-teal'),
+          ink: token('brand-ink'),
+          'ink-2': token('brand-ink-2'),
+          cream: token('brand-cream'),
+          signal: token('brand-signal'),
+          amber: token('brand-amber'),
+          phosphor: token('brand-phosphor'),
+        },
+        voice: {
+          caller: token('voice-caller'),
+          agent: token('voice-agent'),
+          thinking: token('voice-thinking'),
         },
       },
       borderRadius: {
@@ -44,7 +51,8 @@ export default {
       },
       boxShadow: {
         card: '0 1px 2px hsl(var(--shadow-color) / 0.06), 0 8px 24px -6px hsl(var(--shadow-color) / 0.12)',
-        glow: '0 0 0 1px hsl(var(--primary) / 0.25), 0 8px 30px -6px hsl(var(--primary) / 0.45)',
+        glow: '0 0 0 1px hsl(var(--primary) / 0.3), 0 10px 28px -10px hsl(var(--primary) / 0.6)',
+        stamp: '3px 3px 0 0 hsl(var(--foreground))',
       },
       keyframes: {
         drift: {
@@ -56,11 +64,21 @@ export default {
           '0%, 100%': { transform: 'scaleY(0.35)' },
           '50%': { transform: 'scaleY(1)' },
         },
+        ring: {
+          '0%': { transform: 'scale(1)', opacity: '0.55' },
+          '100%': { transform: 'scale(1.9)', opacity: '0' },
+        },
+        'rise-in': {
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         drift: 'drift 18s ease-in-out infinite',
         'drift-slow': 'drift 26s ease-in-out infinite',
         'bar-bounce': 'bar-bounce 1.1s ease-in-out infinite',
+        ring: 'ring 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite',
+        'rise-in': 'rise-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both',
       },
     },
   },

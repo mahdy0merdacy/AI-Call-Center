@@ -29,17 +29,31 @@ export const en = {
     description:
       'Your AI agent picks up, follows your company’s process, looks up real records and replies out loud in under two seconds, in English or French.',
     liveCall: 'Live call',
-    floating: [
-      { title: 'Incoming call', body: 'Agent replied in 1.6 s' },
-      { title: 'Shipment AC1199Z044', body: 'Delayed · new estimate sent' },
-      { title: 'Process enforced', body: 'ID checked before any answer' },
+    proof: [
+      { value: '< 2 s', label: 'to answer out loud' },
+      { value: 'EN · FR', label: 'one agent, two languages' },
+      { value: 'ID first', label: 'process checked before any answer' },
     ],
-    transcript: [
-      '“Hi, where is my parcel? It was due yesterday.”',
-      '“I can check that. What’s your 10-character shipment ID?”',
-      '“It’s AC1199Z044.”',
-      '“It’s delayed by weather on the Marseille route — new estimate: 2 October.”',
-    ],
+  },
+  voice: {
+    caller: 'Caller',
+    agent: 'Agent',
+    thinking: 'Thinking',
+    live: 'Live',
+    sample: 'Sample call',
+    replay: 'Replay the call',
+    ended: (duration: string) => `Call ended · ${duration} · no transfer`,
+    speaker: (name: string) => `voice ${name}`,
+    transcriptTitle: (tenant: string) => `Sample call with ${tenant}`,
+    stages: { stt: 'Listens', llm: 'Thinks', tts: 'Speaks' },
+    events: {
+      intent: 'intent',
+      slot: 'slot',
+      tool: 'tool',
+      knowledge: 'docs',
+      rule: 'rule',
+      end: 'end',
+    },
   },
   footer: {
     privacy: 'Privacy',
@@ -150,8 +164,13 @@ export const en = {
     accountErrorTitle: 'We couldn’t load your account',
   },
   dashboard: {
-    welcome: (name: string) => `Welcome, ${name}`,
-    description: 'You’re signed in. Your AI agent dashboard will live here.',
+    welcome: 'Welcome,',
+    description:
+      'Your AI agent answers every call in your company’s voice and follows your process, step by step. Watch a sample call, then put it to the test yourself.',
+    descriptionPlatform:
+      'Every company’s agent runs on this platform. Here is what their calls look like, from the first word to the last.',
+    addDocuments: 'Teach it with documents',
+    manageTenants: 'Manage tenants',
     scopeNote:
       'The dashboard isn’t part of this release. This page exists so the sign-in flow can be tested end to end.',
     accountTitle: 'Your account',

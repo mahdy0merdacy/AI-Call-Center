@@ -19,7 +19,7 @@ export function Avatar({ name, email, size = 'md' }: { name: string | null; emai
     <span
       aria-hidden
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-indigo to-brand-violet font-bold text-white shadow-sm',
+        'inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-signal to-brand-amber font-bold text-brand-ink shadow-sm',
         size === 'lg' ? 'size-16 text-xl' : 'size-8 text-xs',
       )}
     >
@@ -30,37 +30,46 @@ export function Avatar({ name, email, size = 'md' }: { name: string | null; emai
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/25',
-    isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+    'shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/25',
+    isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
   );
 
-/** Top bar of signed-in pages. */
+function NavLinks() {
+  const user = useAuthedUser();
+  return (
+    <>
+      <NavLink to={paths.dashboard} className={navLinkClass}>
+        {messages.nav.dashboard}
+      </NavLink>
+      {user.role === 'platform_admin' && (
+        <NavLink to={paths.adminTenants} className={navLinkClass}>
+          {messages.nav.tenants}
+        </NavLink>
+      )}
+      {user.role === 'tenant_admin' && user.tenant_id !== null && (
+        <NavLink to={paths.documents} className={navLinkClass}>
+          {messages.nav.documents}
+        </NavLink>
+      )}
+      <NavLink to={paths.profile} className={navLinkClass}>
+        {messages.nav.profile}
+      </NavLink>
+    </>
+  );
+}
+
+/** Top bar of signed-in pages; the links move to a scrollable row on phones. */
 export function AppHeader() {
   const user = useAuthedUser();
   const name = user.full_name || user.email;
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-card/70 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-6">
+    <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="flex items-center gap-8">
           <Logo />
-          <nav aria-label={messages.nav.main} className="hidden items-center gap-1 sm:flex">
-            <NavLink to={paths.dashboard} className={navLinkClass}>
-              {messages.nav.dashboard}
-            </NavLink>
-            {user.role === 'platform_admin' && (
-              <NavLink to={paths.adminTenants} className={navLinkClass}>
-                {messages.nav.tenants}
-              </NavLink>
-            )}
-            {user.role === 'tenant_admin' && user.tenant_id !== null && (
-              <NavLink to={paths.documents} className={navLinkClass}>
-                {messages.nav.documents}
-              </NavLink>
-            )}
-            <NavLink to={paths.profile} className={navLinkClass}>
-              {messages.nav.profile}
-            </NavLink>
+          <nav aria-label={messages.nav.main} className="hidden items-center gap-1 md:flex">
+            <NavLinks />
           </nav>
         </div>
         <div className="flex items-center gap-2">
@@ -75,6 +84,12 @@ export function AppHeader() {
           </NavLink>
         </div>
       </div>
+      <nav
+        aria-label={messages.nav.main}
+        className="flex items-center gap-1 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] md:hidden"
+      >
+        <NavLinks />
+      </nav>
     </header>
   );
 }

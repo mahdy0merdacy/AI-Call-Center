@@ -23,7 +23,7 @@ interface FieldProps {
 
 /**
  * Label + control + hint + animated error, with the ARIA links between them.
- * The label tints to the primary colour while the control has focus.
+ * The label darkens to the ink colour while the control has focus.
  */
 export function Field({ id, label, error, hint, labelAside, className, children }: FieldProps) {
   const hintId = hint ? `${id}-hint` : undefined;
@@ -36,7 +36,7 @@ export function Field({ id, label, error, hint, labelAside, className, children 
         <Label
           htmlFor={id}
           className={cn(
-            'transition-colors duration-200 group-focus-within:text-primary',
+            'transition-colors duration-200 group-focus-within:text-foreground',
             error && 'text-destructive group-focus-within:text-destructive',
           )}
         >
