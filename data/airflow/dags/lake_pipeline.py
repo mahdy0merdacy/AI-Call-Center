@@ -27,9 +27,22 @@ import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task
 
-SINCE = "{{ macros.ds_add(ds, -1) }}"
+# The run's date. Airflow 3 starts MANUAL runs without a logical date, so `ds`
+# and `ts_nodash` are undefined there and every templated task failed before it
+# ran. run_after exists on every run (scheduled: its interval end; manual: now).
+RUN_DATE = "(dag_run.logical_date or dag_run.run_after)"
+SINCE = "{{ macros.ds_add(" + RUN_DATE + " | ds, -1) }}"
 QUALITY = ("/opt/quality-venv/bin/python /opt/aicc/quality/run.py --since " + SINCE
-           + " --json /opt/airflow/quality/results/{{ ts_nodash }}-{{ task.task_id }}.json")
+           + " --json /opt/airflow/quality/results/{{ " + RUN_DATE
+           + " | ts_nodash }}-{{ task.task_id }}.json")
+
+
+def since_day() -> str:
+    """The day before the run's date, for the Python tasks (see RUN_DATE)."""
+    from airflow.sdk import get_current_context
+    run = get_current_context()["dag_run"]
+    when = pendulum.instance(run.logical_date or run.run_after)
+    return when.subtract(days=1).to_date_string()
 
 
 @dag(
@@ -53,10 +66,10 @@ def lake_pipeline():
     )
 
     @task(retries=1, retry_delay=pendulum.duration(minutes=1))
-    def build_silver(ds: str | None = None) -> dict:
+    def build_silver() -> dict:
         from jobs.bronze_call_events import connect
         from jobs.silver_calls import run
-        since = pendulum.parse(ds).subtract(days=1).to_date_string()
+        since = since_day()
         return run(connect(), since)
 
     silver_checks = BashOperator(
@@ -65,10 +78,10 @@ def lake_pipeline():
     )
 
     @task(retries=1, retry_delay=pendulum.duration(minutes=1))
-    def build_gold(ds: str | None = None) -> dict:
+    def build_gold() -> dict:
         from jobs.bronze_call_events import connect
         from jobs.gold_tenant_daily import run
-        since = pendulum.parse(ds).subtract(days=1).to_date_string()
+        since = since_day()
         return run(connect(), since)
 
     gold_checks = BashOperator(
