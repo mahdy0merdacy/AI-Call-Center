@@ -1,0 +1,69 @@
+# Backfill ~30 days of call history for acme, swiftnet and stockline, so the
+# tenant Insights page has something to show. data/simulator/history.py replays
+# scripted callers through the real orchestrator code in-process: real MCP tools,
+# real document search, real call events on Kafka; only the LLM is the fake one.
+#
+# Rendered with its ConfigMap (the generator's files) by tools/populate:
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/tools/populate | kubectl apply -f -
+#   kubectl -n aicc logs -f job/populate-history
+#   kubectl -n aicc delete job populate-history        # before running it again
+#
+# RUN IT ONCE. A second run adds a second month of calls on top of the first
+# (new call ids, so nothing dedupes them). Hence backoffLimit 0: a retry after
+# a crash half-way would publish the first half twice.
+#
+# The image must be built from 9e65b2c or later (KnowledgeSearched, field 49):
+# set its tag in tools/populate/kustomization.yaml.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: populate-history
+  labels: {app: populate-history}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: populate-history}
+    spec:
+      restartPolicy: Never
+      # Next to mcp-*, knowledge and the orchestrator: the same network path a call takes.
+      nodeSelector: {aicc.io/role: voice}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: history
+          image: aicc/orchestrator
+          workingDir: /srv/aicc/services/orchestrator
+          command: ["python", "/srv/aicc/data/simulator/history.py"]
+          # --dry-run first to see the plan; --limit 50 for a smoke run.
+          args: ["--days", "30", "--concurrency", "8", "--seed", "1126", "--tenants", "acme,swiftnet,stockline"]
+          env:
+            # The image's layout: /srv/aicc/{libs,services/orchestrator,tenants}.
+            - {name: AICC_ROOT, value: /srv/aicc}
+            - {name: TENANTS_DIR, value: /srv/aicc/tenants}
+            # stockline is a platform tenant: resolved by slug like the orchestrator does.
+            - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: VOICE_READER_PASSWORD}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: PLATFORM_DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
+            - {name: KNOWLEDGE_URL, value: "http://knowledge.aicc.svc.cluster.local:8100"}
+            - name: MCP_SERVERS
+              value: lookup_shipment=http://mcp-acme.aicc.svc.cluster.local:9101/mcp,reschedule_delivery=http://mcp-acme.aicc.svc.cluster.local:9101/mcp,check_line_status=http://mcp-swiftnet.aicc.svc.cluster.local:9102/mcp
+            - {name: KAFKA_BOOTSTRAP, value: "kafka-1.aicc-data.svc.cluster.local:19092"}
+            - {name: SCHEMA_REGISTRY_URL, value: "http://schema-registry.aicc-data.svc.cluster.local:8081"}
+            # Source.build on every event: history is told apart from live traffic
+            # by synthetic/channel too, but this names the run.
+            - {name: SERVICE_BUILD, value: history-backfill}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+          volumeMounts:
+            - {name: simulator, mountPath: /srv/aicc/data/simulator, readOnly: true}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: simulator
+          configMap: {name: history-simulator}
