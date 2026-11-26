@@ -36,6 +36,13 @@ spec:
             - {name: DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
             - {name: EMBEDDING_MODEL, value: BAAI/bge-m3}
             - {name: EMBEDDING_THREADS, value: "2"}
+            # One thread pool, sized to the CPU budget. Left alone, the tokenizer
+            # (rayon) and OpenMP/MKL each start one thread per HOST CPU (12): on a
+            # 2-CPU budget they spin against each other, and a question's embedding
+            # went from ~0.2 s to ~5 s (half the CPU time in the kernel).
+            - {name: OMP_NUM_THREADS, value: "2"}
+            - {name: MKL_NUM_THREADS, value: "2"}
+            - {name: TOKENIZERS_PARALLELISM, value: "false"}
             - {name: PORT, value: "8100"}
             - {name: HF_HOME, value: /models/huggingface}
             - {name: HF_HUB_OFFLINE, value: "1"}     # the model is on the node; never download
@@ -59,7 +66,7 @@ spec:
             timeoutSeconds: 4
           resources:
             requests: {cpu: 500m, memory: 1Gi}
-            limits: {cpu: "2", memory: 3584Mi}
+            limits: {cpu: "4", memory: 3584Mi}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
