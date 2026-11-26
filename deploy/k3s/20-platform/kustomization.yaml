@@ -16,5 +16,5 @@ resources:
 images:
   - {name: aicc/portal, newName: 100.72.101.66:5001/aicc/portal, newTag: 00e23cc}
   - {name: aicc/documents, newName: 100.72.101.66:5001/aicc/documents, newTag: 00e23cc}
-  - {name: aicc/web, newName: 100.72.101.66:5001/aicc/web, newTag: web-11261021}
-  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: 00e23cc}
+  - {name: aicc/web, newName: 100.72.101.66:5001/aicc/web, newTag: "b4e6e35"}
+  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: "4793816"}

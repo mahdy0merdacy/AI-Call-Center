@@ -13,4 +13,4 @@ resources:
 
 images:
   # Placeholder tag: set it to the image CI built (its short commit SHA).
-  - {name: aicc/insights, newName: 100.72.101.66:5001/aicc/insights, newTag: replace-me}
+  - {name: aicc/insights, newName: 100.72.101.66:5001/aicc/insights, newTag: "b4e6e35"}

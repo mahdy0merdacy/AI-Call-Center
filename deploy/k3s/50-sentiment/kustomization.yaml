@@ -31,4 +31,4 @@ configMapGenerator:
       - ../../../services/sentiment/app/schema.py
 
 images:
-  - {name: aicc/sentiment, newName: 100.72.101.66:5001/aicc/sentiment, newTag: 8b85f4f}
+  - {name: aicc/sentiment, newName: 100.72.101.66:5001/aicc/sentiment, newTag: "wt-11261156"}

@@ -47,6 +47,8 @@ spec:
             - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
             - {name: PLATFORM_DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
             - {name: KNOWLEDGE_URL, value: "http://knowledge.aicc.svc.cluster.local:8100"}
+            # Same coverage threshold as the live orchestrator (30-voice/orchestrator.yaml).
+            - {name: KNOWLEDGE_COVERED_MIN, value: "0.48"}
             - name: MCP_SERVERS
               value: lookup_shipment=http://mcp-acme.aicc.svc.cluster.local:9101/mcp,reschedule_delivery=http://mcp-acme.aicc.svc.cluster.local:9101/mcp,check_line_status=http://mcp-swiftnet.aicc.svc.cluster.local:9102/mcp
             - {name: KAFKA_BOOTSTRAP, value: "kafka-1.aicc-data.svc.cluster.local:19092"}

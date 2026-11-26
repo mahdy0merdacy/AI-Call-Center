@@ -20,4 +20,4 @@ configMapGenerator:
 
 images:
   # An orchestrator image built from 9e65b2c or later. SET THE TAG before applying.
-  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: SET-ME}
+  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: "4793816"}
