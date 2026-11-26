@@ -146,3 +146,15 @@ sentiment:
         - data/proto/**/*               # the event schema it reads and writes
         - ci/templates/**/*
         - .gitlab-ci.yml
+
+insights:
+  extends: .child
+  trigger:
+    include: services/insights/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_COMMIT_TAG
+    - changes:
+        - services/insights/**/*
+        - ci/templates/**/*
+        - .gitlab-ci.yml
