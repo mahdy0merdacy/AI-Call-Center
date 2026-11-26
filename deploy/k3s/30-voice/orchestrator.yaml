@@ -35,6 +35,9 @@ spec:
             - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
             - {name: PLATFORM_DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
             - {name: KNOWLEDGE_URL, value: "http://knowledge:8100"}
+            # "Covered" vs knowledge gap, on bge-m3 cosine similarity: calibrated on
+            # Stockline's policy (covered >= 0.490, unrelated <= 0.469).
+            - {name: KNOWLEDGE_COVERED_MIN, value: "0.48"}
             - name: MCP_SERVERS
               value: lookup_shipment=http://mcp-acme:9101/mcp,reschedule_delivery=http://mcp-acme:9101/mcp,check_line_status=http://mcp-swiftnet:9102/mcp
             - {name: TENANTS_DIR, value: /srv/aicc/tenants}

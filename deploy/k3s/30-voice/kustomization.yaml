@@ -34,9 +34,9 @@ configMapGenerator:
       - ../../../tenants/fixtures/knowledge/swiftnet-faq.md
 
 images:
-  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: 9a89c22}
+  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: "4793816"}
   - {name: aicc/media-edge, newName: 100.72.101.66:5001/aicc/media-edge, newTag: edge-11261044}
   - {name: aicc/mcp-servers, newName: 100.72.101.66:5001/aicc/mcp-servers, newTag: 00e23cc}
-  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: 00e23cc}
+  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: "4793816"}
   # stt and tts are not in the registry: imported straight into fedora's k3s
   # (docker save ... | sudo k3s ctr images import -) and used with pullPolicy Never.

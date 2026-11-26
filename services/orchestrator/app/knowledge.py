@@ -21,9 +21,11 @@ import aiohttp
 SEARCH_TIMEOUT_S = 1.5
 TOP_K = 4
 # A question is "covered" when its nearest chunk is at least this similar
-# (bge-m3 cosine). Calibrated on a real policy document: on-topic questions
-# score ~0.55-0.75, unrelated ones ~0.30-0.45. KNOWLEDGE_COVERED_MIN overrides.
-COVERED_MIN = float(os.environ.get("KNOWLEDGE_COVERED_MIN", "0.5"))
+# (bge-m3 cosine). Measured on a real policy document (Stockline's stock control
+# policy, 8 + 8 questions): covered 0.490-0.698 (lowest: a bare code, "what is
+# SCP-105"), not covered 0.320-0.469. 0.48 separates them; the margin is narrow,
+# so recheck per deployment. KNOWLEDGE_COVERED_MIN overrides.
+COVERED_MIN = float(os.environ.get("KNOWLEDGE_COVERED_MIN", "0.48"))
 MAX_QUERY_CHARS = 2000      # the service refuses longer queries
 MAX_PASSAGE_CHARS = 1500    # chunks are ~800 chars; this only bounds the prompt
 
