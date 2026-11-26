@@ -1,0 +1,11 @@
+# Exploring the lake from a laptop: Jupyter + the same readers the quality checks use.
+#   python3.12 -m venv .venv-notebook && .venv-notebook/bin/pip install -r data/notebooks/requirements.txt
+jupyterlab==4.4.10
+ipykernel==7.1.0
+matplotlib==3.10.7
+deltalake==1.7.0
+pandas==3.1.1
+pyarrow==26.0.1
+psycopg[binary]==3.3.9
+protobuf==7.36.2
+PyYAML==6.0.4
