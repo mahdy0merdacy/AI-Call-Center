@@ -106,6 +106,7 @@ export const router = createBrowserRouter([
               },
               {
                 // The documents service only accepts company admins (it answers 403 to anyone else).
+                // Insights shares the same gate: it is a company admin's view of its own calls.
                 element: <RequireRole role="tenant_admin" />,
                 children: [
                   {
@@ -116,6 +117,13 @@ export const router = createBrowserRouter([
                         lazy: () =>
                           import('@/features/documents/pages/DocumentsPage').then((m) => ({
                             Component: m.DocumentsPage,
+                          })),
+                      },
+                      {
+                        path: paths.insights,
+                        lazy: () =>
+                          import('@/features/insights/pages/InsightsPage').then((m) => ({
+                            Component: m.InsightsPage,
                           })),
                       },
                     ],

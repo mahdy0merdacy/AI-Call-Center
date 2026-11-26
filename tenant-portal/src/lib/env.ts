@@ -19,6 +19,8 @@ const envSchema = z.object({
   VITE_API_BASE_URL: z.string().default(''),
   // The documents service is a separate backend from the auth service.
   VITE_DOCUMENTS_API_URL: z.string().default(''),
+  // The insights service (call analytics). Empty = same origin: the web gateway routes /api/insights/ to it.
+  VITE_INSIGHTS_API_URL: z.string().default(''),
   // Must match the documents service's MAX_UPLOAD_SIZE_MB (the server enforces it anyway).
   VITE_MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),
   VITE_GOOGLE_AUTH_URL: z.string().default('/_allauth/browser/v1/auth/provider/redirect'),
@@ -44,6 +46,7 @@ if (!parsed.success) {
 
 const apiBaseUrl = parsed.data.VITE_API_BASE_URL.replace(/\/+$/, '');
 const documentsBaseUrl = parsed.data.VITE_DOCUMENTS_API_URL.replace(/\/+$/, '');
+const insightsBaseUrl = parsed.data.VITE_INSIGHTS_API_URL.replace(/\/+$/, '');
 
 /**
  * The runtime value wins whenever it is set (even to '', which turns the link off), so
@@ -68,6 +71,8 @@ export const env = {
   apiRoot: `${apiBaseUrl}/api`,
   /** Root of the documents service, e.g. `http://localhost:8001/api`. */
   documentsRoot: `${documentsBaseUrl}/api`,
+  /** Root of the insights service ('' origin = same origin, e.g. `/api`). */
+  insightsRoot: `${insightsBaseUrl}/api`,
   maxUploadMb: parsed.data.VITE_MAX_UPLOAD_MB,
   googleAuthUrl: parsed.data.VITE_GOOGLE_AUTH_URL,
   googleAuthMethod: parsed.data.VITE_GOOGLE_AUTH_METHOD,

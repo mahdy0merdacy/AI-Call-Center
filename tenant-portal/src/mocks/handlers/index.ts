@@ -1,6 +1,7 @@
 import { networkFailureHandler } from '../network';
 import { documentsHandlers } from './documents';
 import { googleHandlers } from './google';
+import { insightsHandlers } from './insights';
 import { loginHandlers } from './login';
 import { mfaSetupHandlers } from './mfaSetup';
 import { passwordResetHandlers } from './passwordReset';
@@ -21,4 +22,5 @@ export const handlers = [
   ...profileHandlers,
   ...documentsHandlers,
   ...sessionLinksHandlers,
+  ...insightsHandlers,
 ];
