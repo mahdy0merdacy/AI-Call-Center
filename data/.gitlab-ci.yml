@@ -106,7 +106,7 @@ quality-tests:
   stage: test
   script:
     - pip install -q -r data/quality/requirements.txt pytest==9.2.0
-    - python -m pytest data/quality/tests -q --junitxml="$CI_PROJECT_DIR/junit.xml"
+    - python -m pytest data/quality/tests data/serving/tests -q --junitxml="$CI_PROJECT_DIR/junit.xml"
   artifacts:
     when: always
     reports:

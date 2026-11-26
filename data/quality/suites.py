@@ -98,7 +98,7 @@ def silver_calls() -> dict[str, list]:
             # A call still open an hour after its last event: a crashed process.
             gxe.ExpectColumnValuesToBeInSet(column="open_after_1h", value_set=[False]),
             gxe.ExpectColumnValuesToBeInSet(column="channel",
-                                            value_set=["webrtc", "simulator", "fault", "smoke"]),
+                                            value_set=["webrtc", "simulator", "fault", "smoke", "history"]),
             gxe.ExpectColumnValuesToBeInSet(column="end_reason",
                                             value_set=sorted(enum_names("EndReason", "END_REASON_"))),
             gxe.ExpectColumnValuesToBeBetween(column="duration_ms", min_value=0,
