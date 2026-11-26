@@ -2,6 +2,7 @@
 
     ingest_bronze ─▶ bronze_gate ─▶ build_silver ─▶ silver_checks ─▶ build_gold ─▶ gold_checks
                      (GX)                           (GX)                            (GX)
+        ─▶ publish_insights   gold -> Postgres analytics.*, for the portal's Insights page
 
 The DAG orchestrates; Spark computes; Great Expectations judges.
 
@@ -20,7 +21,9 @@ Why these settings (DDIA.md §7, §15):
     still covers events ingested late the previous day.
 
 GX runs in its own virtualenv (/opt/quality-venv, see airflow/Dockerfile) as a
-subprocess, so its dependencies never meet Airflow's.
+subprocess, so its dependencies never meet Airflow's. publish_insights
+(data/serving/publish.py) runs in the same venv (delta-rs, pandas, psycopg) and
+only after gold_checks passed: a client never sees gold that failed its gate.
 """
 
 import pendulum
@@ -35,6 +38,8 @@ SINCE = "{{ macros.ds_add(" + RUN_DATE + " | ds, -1) }}"
 QUALITY = ("/opt/quality-venv/bin/python /opt/aicc/quality/run.py --since " + SINCE
            + " --json /opt/airflow/quality/results/{{ " + RUN_DATE
            + " | ts_nodash }}-{{ task.task_id }}.json")
+PUBLISH = ("/opt/quality-venv/bin/python /opt/aicc/serving/publish.py --since " + SINCE
+           + " --run-id '{{ run_id }}'")
 
 
 def since_day() -> str:
@@ -74,23 +79,35 @@ def lake_pipeline():
 
     silver_checks = BashOperator(
         task_id="silver_checks",
-        bash_command=f"{QUALITY} silver_call_events silver_calls silver_turns",
+        bash_command=f"{QUALITY} silver_call_events silver_calls silver_turns "
+                     "silver_utterance_emotions silver_call_sentiment silver_knowledge_searches",
     )
 
     @task(retries=1, retry_delay=pendulum.duration(minutes=1))
     def build_gold() -> dict:
+        from jobs import gold_insights, gold_tenant_daily
         from jobs.bronze_call_events import connect
-        from jobs.gold_tenant_daily import run
         since = since_day()
-        return run(connect(), since)
+        spark = connect()
+        return {"tenant_daily": gold_tenant_daily.run(spark, since),
+                "insights": gold_insights.run(spark, since)}
 
     gold_checks = BashOperator(
         task_id="gold_checks",
-        bash_command=f"{QUALITY} gold_tenant_daily",
+        bash_command=f"{QUALITY} gold_tenant_daily gold_sentiment_daily gold_call_sentiment_daily "
+                     "gold_tool_daily gold_knowledge_daily gold_document_usage "
+                     "gold_knowledge_gaps gold_hourly gold_calls_to_review",
+    )
+
+    publish_insights = BashOperator(
+        task_id="publish_insights",
+        bash_command=PUBLISH,
+        retries=2,
+        retry_delay=pendulum.duration(minutes=1),
     )
 
     (ingest_bronze() >> bronze_gate >> build_silver() >> silver_checks
-     >> build_gold() >> gold_checks)
+     >> build_gold() >> gold_checks >> publish_insights)
 
 
 lake_pipeline()

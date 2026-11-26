@@ -86,3 +86,10 @@ GRANT SELECT ON ALL TABLES IN SCHEMA acme, swiftnet TO debezium;   -- initial sn
 GRANT CONNECT ON DATABASE aicc TO grafana;
 GRANT USAGE ON SCHEMA analytics TO grafana;
 ALTER DEFAULT PRIVILEGES FOR ROLE aicc IN SCHEMA analytics GRANT SELECT ON TABLES TO grafana;
+
+-- ── the portal's Insights page ─────────────────────────────────────────────
+-- Tables are created by data/serving/publish.py (as aicc), which also repeats
+-- these grants on every run for a database that predates them.
+GRANT CONNECT ON DATABASE aicc TO insights;
+GRANT USAGE ON SCHEMA analytics TO insights;
+ALTER DEFAULT PRIVILEGES FOR ROLE aicc IN SCHEMA analytics GRANT SELECT ON TABLES TO insights;
