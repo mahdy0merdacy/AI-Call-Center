@@ -152,11 +152,220 @@ def gold_tenant_daily() -> dict[str, list]:
     }
 
 
+# -- insights ------------------------------------------------------------------------
+#
+# The sentiment service's classes (services/sentiment/app/emotions.py). The
+# contract makes emotion a string so a new class is not a wire change; an
+# unknown one is therefore a WARNING (a new model shipped), never critical.
+EMOTIONS = ["neutral", "satisfied", "confused", "frustrated", "angry", "anxious", "sad"]
+TRENDS = ["improving", "stable", "worsening"]
+GOLD_KEY = ["tenant_id", "call_date", "synthetic"]
+
+
+def _tenant_rules() -> tuple[list, list]:
+    """(critical, warning): a few unknown tenants are suspicious, many are wrong."""
+    tenants = sorted(known_tenants())
+    return ([gxe.ExpectColumnValuesToBeInSet(column="tenant_id", value_set=tenants, mostly=0.99)],
+            [gxe.ExpectColumnValuesToBeInSet(column="tenant_id", value_set=tenants)])
+
+
+def silver_utterance_emotions() -> dict[str, list]:
+    critical, warning = _tenant_rules()
+    return {
+        "critical": [
+            gxe.ExpectColumnValuesToBeUnique(column="event_id"),
+            # Dated by the call: a row without one was not joined to a call.
+            *(gxe.ExpectColumnValuesToNotBeNull(column=c)
+              for c in ("call_id", "tenant_id", "call_date", "emotion")),
+            gxe.ExpectColumnValuesToBeBetween(column="score", min_value=0, max_value=1),
+            *critical,
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeInSet(column="emotion", value_set=EMOTIONS),
+            # The service's own count; it restarts when the service does.
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=["call_id", "utterance_index"]),
+            gxe.ExpectColumnValuesToNotBeNull(column="synthetic", mostly=0.99),
+            *warning,
+        ],
+    }
+
+
+def silver_call_sentiment() -> dict[str, list]:
+    critical, warning = _tenant_rules()
+    return {
+        "critical": [
+            gxe.ExpectColumnValuesToBeUnique(column="call_id"),
+            *(gxe.ExpectColumnValuesToNotBeNull(column=c) for c in ("tenant_id", "call_date")),
+            gxe.ExpectColumnValuesToBeInSet(column="trend", value_set=TRENDS),
+            *critical,
+        ],
+        "warning": [
+            *(gxe.ExpectColumnValuesToBeInSet(column=c, value_set=EMOTIONS)
+              for c in ("dominant", "first_emotion", "last_emotion")),
+            gxe.ExpectColumnValuesToBeBetween(column="utterances", min_value=1),
+            *warning,
+        ],
+    }
+
+
+def silver_knowledge_searches() -> dict[str, list]:
+    critical, warning = _tenant_rules()
+    return {
+        "critical": [
+            gxe.ExpectColumnValuesToBeUnique(column="event_id"),
+            *(gxe.ExpectColumnValuesToNotBeNull(column=c) for c in ("tenant_id", "call_date")),
+            # The caller's words, shown to the client as "knowledge gaps": masked.
+            gxe.ExpectColumnValuesToNotMatchRegex(column="query",
+                                                  regex=IDENTIFIER_PATTERN.pattern),
+            # Cosine similarity cannot leave [-1, 1]; outside it is a broken field.
+            gxe.ExpectColumnValuesToBeBetween(column="best_similarity", min_value=-1, max_value=1),
+            *critical,
+        ],
+        "warning": [
+            # The contract says 0..1 (normalised embeddings).
+            gxe.ExpectColumnValuesToBeBetween(column="best_similarity", min_value=0, max_value=1),
+            gxe.ExpectColumnValuesToBeBetween(column="latency_ms", min_value=0, max_value=10_000),
+            *warning,
+        ],
+    }
+
+
+def gold_sentiment_daily() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=[*GOLD_KEY, "emotion"]),
+            gxe.ExpectColumnValuesToBeBetween(column="utterances", min_value=1),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="utterances",
+                                                column_B="silver_utterances"),
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeInSet(column="emotion", value_set=EMOTIONS),
+        ],
+    }
+
+
+def gold_call_sentiment_daily() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=GOLD_KEY),
+            gxe.ExpectColumnValuesToBeBetween(column="calls", min_value=1),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="calls", column_B="silver_calls"),
+            # Every call has exactly one trend.
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="outcome_total", column_B="calls"),
+            *(gxe.ExpectColumnPairValuesAToBeGreaterThanB(column_A="calls", column_B=c,
+                                                          or_equal=True)
+              for c in ("escalation_risk_calls", "ended_negative")),
+        ],
+        "warning": [],
+    }
+
+
+def gold_tool_daily() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=[*GOLD_KEY, "tool"]),
+            gxe.ExpectColumnValuesToBeBetween(column="calls", min_value=1),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="calls", column_B="silver_tool_calls"),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="outcome_total", column_B="calls"),
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeBetween(column="avg_latency_ms", min_value=0,
+                                              max_value=5_000),
+        ],
+    }
+
+
+def gold_knowledge_daily() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=GOLD_KEY),
+            gxe.ExpectColumnValuesToBeBetween(column="searches", min_value=1),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="searches", column_B="silver_searches"),
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="outcome_total", column_B="searches"),
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeBetween(column="avg_latency_ms", min_value=0,
+                                              max_value=10_000),
+        ],
+    }
+
+
+def gold_document_usage() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=[*GOLD_KEY, "document_title"]),
+            gxe.ExpectColumnValuesToNotBeNull(column="document_title"),
+            gxe.ExpectColumnValuesToBeBetween(column="uses", min_value=1),
+        ],
+        "warning": [],
+    }
+
+
+def gold_knowledge_gaps() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=[*GOLD_KEY, "question"]),
+            gxe.ExpectColumnValuesToNotBeNull(column="question"),
+            gxe.ExpectColumnValuesToBeBetween(column="asked", min_value=1),
+            # Shown verbatim to the client: no identifier may have survived.
+            gxe.ExpectColumnValuesToNotMatchRegex(column="question",
+                                                  regex=IDENTIFIER_PATTERN.pattern),
+            gxe.ExpectColumnValuesToBeBetween(column="best_similarity", min_value=-1, max_value=1),
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeBetween(column="best_similarity", min_value=0, max_value=1),
+        ],
+    }
+
+
+def gold_hourly() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectCompoundColumnsToBeUnique(column_list=[*GOLD_KEY, "hour"]),
+            gxe.ExpectColumnValuesToBeBetween(column="hour", min_value=0, max_value=23),
+            gxe.ExpectColumnValuesToBeBetween(column="calls", min_value=1),
+            # The hours of a day add up to that day's calls.
+            gxe.ExpectColumnPairValuesToBeEqual(column_A="day_calls", column_B="silver_calls"),
+        ],
+        "warning": [],
+    }
+
+
+def gold_calls_to_review() -> dict[str, list]:
+    return {
+        "critical": [
+            gxe.ExpectColumnValuesToBeUnique(column="call_id"),
+            *(gxe.ExpectColumnValuesToNotBeNull(column=c)
+              for c in ("tenant_id", "call_date", "started_at", "reason")),
+            gxe.ExpectColumnValuesToBeInSet(
+                column="reason",
+                value_set=["escalated", "negative_end", "escalated,negative_end"]),
+            # Transcripts are shown to the client: masked, every line.
+            gxe.ExpectColumnValuesToNotMatchRegex(column="transcript_text",
+                                                  regex=IDENTIFIER_PATTERN.pattern),
+        ],
+        "warning": [
+            gxe.ExpectColumnValuesToBeInSet(column="last_emotion", value_set=EMOTIONS),
+        ],
+    }
+
+
 SUITES = {
     "bronze": bronze,
     "bronze_batch_stats": bronze_batch_stats,
     "silver_call_events": silver_call_events,
     "silver_calls": silver_calls,
     "silver_turns": silver_turns,
+    "silver_utterance_emotions": silver_utterance_emotions,
+    "silver_call_sentiment": silver_call_sentiment,
+    "silver_knowledge_searches": silver_knowledge_searches,
     "gold_tenant_daily": gold_tenant_daily,
+    "gold_sentiment_daily": gold_sentiment_daily,
+    "gold_call_sentiment_daily": gold_call_sentiment_daily,
+    "gold_tool_daily": gold_tool_daily,
+    "gold_knowledge_daily": gold_knowledge_daily,
+    "gold_document_usage": gold_document_usage,
+    "gold_knowledge_gaps": gold_knowledge_gaps,
+    "gold_hourly": gold_hourly,
+    "gold_calls_to_review": gold_calls_to_review,
 }

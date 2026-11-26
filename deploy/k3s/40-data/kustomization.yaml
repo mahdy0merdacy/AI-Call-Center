@@ -26,6 +26,9 @@ secretGenerator:
       - S3_ACCESS_KEY=lake
       - S3_SECRET_KEY=lake-secret-key
       - PII_PEPPER=dev-pepper-change-me
+      # Read-only role the portal's Insights API reads analytics.* with;
+      # data/serving/publish.py (re)sets it on every run.
+      - INSIGHTS_DB_PASSWORD=insights
     options: {disableNameSuffixHash: true}
   - name: seaweedfs-s3
     files: [s3.json=../../../data/seaweedfs/s3.json]
@@ -45,12 +48,16 @@ configMapGenerator:
       - ../../../data/spark/jobs/bronze_call_events.py
       - ../../../data/spark/jobs/silver_calls.py
       - ../../../data/spark/jobs/gold_tenant_daily.py
+      - ../../../data/spark/jobs/gold_insights.py
       - ../../../data/spark/jobs/peek_bronze.py
   - name: quality-code
     files:
       - ../../../data/quality/lake.py
       - ../../../data/quality/suites.py
       - ../../../data/quality/run.py
+  - name: serving-code
+    files:
+      - ../../../data/serving/publish.py
   # events.desc is binary: kustomize stores it as binaryData.
   - name: event-schema
     files:
