@@ -258,3 +258,39 @@ def test_the_demo_tenants_prompts_are_unchanged():
                       tools=ToolRegistry(servers={}, allowed=set()))
         for extra in ("", "The tool returned this data: {}"):
             assert agent._system(extra) == _system_before_retrieval(t, extra), t.slug
+
+
+# ── knowledge coverage: what the Insights page's knowledge gaps are made of ──────
+
+
+def test_search_reads_the_nearest_chunks_similarity():
+    async def handler(request: web.Request) -> web.Response:
+        return web.json_response({"chunks": [HOURS], "took_ms": 5, "best_similarity": 0.68})
+
+    assert _search(handler).best_similarity == 0.68
+
+
+def test_covered_means_close_enough_and_something_found():
+    hours = [Passage("d1", "Opening hours", None, "Open 9 to 6.", 0.03)]
+    assert SearchResult(hours, best_similarity=0.62).covered(0.5)
+    assert not SearchResult(hours, best_similarity=0.38).covered(0.5)    # off-topic
+    assert not SearchResult([], best_similarity=0.9).covered(0.5)        # nothing to quote
+    assert not SearchResult(hours).covered(0.5)                          # service sent none
+
+
+def test_a_platform_turn_records_what_it_searched_and_whether_it_was_covered(monkeypatch):
+    knowledge = FakeKnowledge(SearchResult(
+        [Passage("d1", "Opening hours", None, "Open 9 to 6.", 0.03),
+         Passage("d2", "Opening hours", None, "Closed Sundays.", 0.02)],
+        took_ms=7, best_similarity=0.71))
+    _, events = _turn(monkeypatch, BISTRO, knowledge, text="are you open on sunday?")
+    (retrieval,) = [e for e in events if e["type"] == "retrieval"]
+    assert retrieval["query"] == "are you open on sunday?"
+    assert retrieval["best_similarity"] == 0.71 and retrieval["covered"] is True
+    assert retrieval["titles"] == ["Opening hours"]          # once per document
+
+
+def test_a_failed_search_is_recorded_as_not_covered(monkeypatch):
+    _, events = _turn(monkeypatch, BISTRO, FakeKnowledge(None))
+    (retrieval,) = [e for e in events if e["type"] == "retrieval"]
+    assert retrieval["covered"] is False and retrieval["titles"] == []

@@ -12,6 +12,7 @@ failed, so it says so instead of guessing.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +20,10 @@ import aiohttp
 
 SEARCH_TIMEOUT_S = 1.5
 TOP_K = 4
+# A question is "covered" when its nearest chunk is at least this similar
+# (bge-m3 cosine). Calibrated on a real policy document: on-topic questions
+# score ~0.55-0.75, unrelated ones ~0.30-0.45. KNOWLEDGE_COVERED_MIN overrides.
+COVERED_MIN = float(os.environ.get("KNOWLEDGE_COVERED_MIN", "0.5"))
 MAX_QUERY_CHARS = 2000      # the service refuses longer queries
 MAX_PASSAGE_CHARS = 1500    # chunks are ~800 chars; this only bounds the prompt
 
@@ -40,6 +45,12 @@ class Passage:
 class SearchResult:
     passages: list[Passage]
     took_ms: int = 0    # the search itself, as the service reports it
+    # Cosine similarity of the nearest chunk (0..1), None if the service sent none.
+    best_similarity: float | None = None
+
+    def covered(self, threshold: float) -> bool:
+        """Do the documents speak about this at all (vs a knowledge gap)?"""
+        return bool(self.passages) and (self.best_similarity or 0.0) >= threshold
 
 
 class KnowledgeClient:
@@ -71,7 +82,9 @@ class KnowledgeClient:
             raise KnowledgeError(f"no answer within {self.timeout_s:.1f} s") from exc
         except (aiohttp.ClientError, ValueError) as exc:
             raise KnowledgeError(type(exc).__name__) from exc
-        return SearchResult(_passages(body)[:self.k], _int(body.get("took_ms")))
+        best = body.get("best_similarity")
+        return SearchResult(_passages(body)[:self.k], _int(body.get("took_ms")),
+                            float(best) if isinstance(best, (int, float)) else None)
 
 
 def _passages(body: Any) -> list[Passage]:

@@ -157,6 +157,13 @@ class Session:
             else:
                 log.warning("[%s] retrieval failed after %d ms: %s", self.call_id,
                             e.get("latency_ms", 0), e.get("error") or "unknown")
+            if e.get("query"):    # an empty utterance searched nothing: no fact to record
+                self.events.emit(knowledge_searched=ev.KnowledgeSearched(
+                    turn_index=turn, query=e["query"], hits=e.get("hits", 0),
+                    best_similarity=e.get("best_similarity", 0.0),
+                    covered=e.get("covered", False),
+                    document_titles=e.get("titles") or [],
+                    latency_ms=e.get("latency_ms", 0), failed=not e.get("ok")))
         elif t == "error":
             log.error("[%s] turn error: %s", self.call_id, e.get("detail"))
             self.events.emit(error_raised=ev.ErrorRaised(

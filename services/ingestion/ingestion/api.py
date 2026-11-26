@@ -251,9 +251,15 @@ def create_app(
                     'section': hit.section,
                     'content': hit.content,
                     'score': score,
+                    'similarity': hit.similarity,
                 }
                 for hit, score in found
             ],
+            # How close the nearest chunk is to the question (cosine, 0..1), or
+            # null when nothing came back: "do the documents cover this at all".
+            'best_similarity': max(
+                (hit.similarity for hit, _ in found if hit.similarity is not None), default=None
+            ),
             'took_ms': round((time.perf_counter() - started) * 1000),
         }
 

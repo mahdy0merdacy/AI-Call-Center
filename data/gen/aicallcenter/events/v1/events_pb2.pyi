@@ -1,8 +1,9 @@
 from google.protobuf import descriptor_pb2 as _descriptor_pb2
+from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Mapping as _Mapping
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
@@ -62,7 +63,7 @@ PII_FIELD_NUMBER: _ClassVar[int]
 pii: _descriptor.FieldDescriptor
 
 class Event(_message.Message):
-    __slots__ = ("event_id", "call_id", "tenant_id", "source", "seq", "occurred_at_ms", "call_started", "call_ended", "speech_started", "speech_ended", "partial_transcribed", "utterance_transcribed", "stt_session_summarized", "turn_decided", "slot_filled", "slot_rejected", "endpointing_changed", "tool_invoked", "llm_completed", "turn_completed", "barged_in", "escalated", "clause_synthesized", "first_audio_played", "emotion_classified", "call_emotion_summarized", "error_raised")
+    __slots__ = ("event_id", "call_id", "tenant_id", "source", "seq", "occurred_at_ms", "call_started", "call_ended", "speech_started", "speech_ended", "partial_transcribed", "utterance_transcribed", "stt_session_summarized", "turn_decided", "slot_filled", "slot_rejected", "endpointing_changed", "tool_invoked", "llm_completed", "turn_completed", "barged_in", "escalated", "knowledge_searched", "clause_synthesized", "first_audio_played", "emotion_classified", "call_emotion_summarized", "error_raised")
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
     CALL_ID_FIELD_NUMBER: _ClassVar[int]
     TENANT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -85,6 +86,7 @@ class Event(_message.Message):
     TURN_COMPLETED_FIELD_NUMBER: _ClassVar[int]
     BARGED_IN_FIELD_NUMBER: _ClassVar[int]
     ESCALATED_FIELD_NUMBER: _ClassVar[int]
+    KNOWLEDGE_SEARCHED_FIELD_NUMBER: _ClassVar[int]
     CLAUSE_SYNTHESIZED_FIELD_NUMBER: _ClassVar[int]
     FIRST_AUDIO_PLAYED_FIELD_NUMBER: _ClassVar[int]
     EMOTION_CLASSIFIED_FIELD_NUMBER: _ClassVar[int]
@@ -112,12 +114,13 @@ class Event(_message.Message):
     turn_completed: TurnCompleted
     barged_in: BargedIn
     escalated: Escalated
+    knowledge_searched: KnowledgeSearched
     clause_synthesized: ClauseSynthesized
     first_audio_played: FirstAudioPlayed
     emotion_classified: EmotionClassified
     call_emotion_summarized: CallEmotionSummarized
     error_raised: ErrorRaised
-    def __init__(self, event_id: _Optional[str] = ..., call_id: _Optional[str] = ..., tenant_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ..., seq: _Optional[int] = ..., occurred_at_ms: _Optional[int] = ..., call_started: _Optional[_Union[CallStarted, _Mapping]] = ..., call_ended: _Optional[_Union[CallEnded, _Mapping]] = ..., speech_started: _Optional[_Union[SpeechStarted, _Mapping]] = ..., speech_ended: _Optional[_Union[SpeechEnded, _Mapping]] = ..., partial_transcribed: _Optional[_Union[PartialTranscribed, _Mapping]] = ..., utterance_transcribed: _Optional[_Union[UtteranceTranscribed, _Mapping]] = ..., stt_session_summarized: _Optional[_Union[SttSessionSummarized, _Mapping]] = ..., turn_decided: _Optional[_Union[TurnDecided, _Mapping]] = ..., slot_filled: _Optional[_Union[SlotFilled, _Mapping]] = ..., slot_rejected: _Optional[_Union[SlotRejected, _Mapping]] = ..., endpointing_changed: _Optional[_Union[EndpointingChanged, _Mapping]] = ..., tool_invoked: _Optional[_Union[ToolInvoked, _Mapping]] = ..., llm_completed: _Optional[_Union[LlmCompleted, _Mapping]] = ..., turn_completed: _Optional[_Union[TurnCompleted, _Mapping]] = ..., barged_in: _Optional[_Union[BargedIn, _Mapping]] = ..., escalated: _Optional[_Union[Escalated, _Mapping]] = ..., clause_synthesized: _Optional[_Union[ClauseSynthesized, _Mapping]] = ..., first_audio_played: _Optional[_Union[FirstAudioPlayed, _Mapping]] = ..., emotion_classified: _Optional[_Union[EmotionClassified, _Mapping]] = ..., call_emotion_summarized: _Optional[_Union[CallEmotionSummarized, _Mapping]] = ..., error_raised: _Optional[_Union[ErrorRaised, _Mapping]] = ...) -> None: ...
+    def __init__(self, event_id: _Optional[str] = ..., call_id: _Optional[str] = ..., tenant_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ..., seq: _Optional[int] = ..., occurred_at_ms: _Optional[int] = ..., call_started: _Optional[_Union[CallStarted, _Mapping]] = ..., call_ended: _Optional[_Union[CallEnded, _Mapping]] = ..., speech_started: _Optional[_Union[SpeechStarted, _Mapping]] = ..., speech_ended: _Optional[_Union[SpeechEnded, _Mapping]] = ..., partial_transcribed: _Optional[_Union[PartialTranscribed, _Mapping]] = ..., utterance_transcribed: _Optional[_Union[UtteranceTranscribed, _Mapping]] = ..., stt_session_summarized: _Optional[_Union[SttSessionSummarized, _Mapping]] = ..., turn_decided: _Optional[_Union[TurnDecided, _Mapping]] = ..., slot_filled: _Optional[_Union[SlotFilled, _Mapping]] = ..., slot_rejected: _Optional[_Union[SlotRejected, _Mapping]] = ..., endpointing_changed: _Optional[_Union[EndpointingChanged, _Mapping]] = ..., tool_invoked: _Optional[_Union[ToolInvoked, _Mapping]] = ..., llm_completed: _Optional[_Union[LlmCompleted, _Mapping]] = ..., turn_completed: _Optional[_Union[TurnCompleted, _Mapping]] = ..., barged_in: _Optional[_Union[BargedIn, _Mapping]] = ..., escalated: _Optional[_Union[Escalated, _Mapping]] = ..., knowledge_searched: _Optional[_Union[KnowledgeSearched, _Mapping]] = ..., clause_synthesized: _Optional[_Union[ClauseSynthesized, _Mapping]] = ..., first_audio_played: _Optional[_Union[FirstAudioPlayed, _Mapping]] = ..., emotion_classified: _Optional[_Union[EmotionClassified, _Mapping]] = ..., call_emotion_summarized: _Optional[_Union[CallEmotionSummarized, _Mapping]] = ..., error_raised: _Optional[_Union[ErrorRaised, _Mapping]] = ...) -> None: ...
 
 class Source(_message.Message):
     __slots__ = ("service", "instance", "build")
@@ -324,6 +327,26 @@ class Escalated(_message.Message):
     intent: str
     reason: str
     def __init__(self, turn_index: _Optional[int] = ..., intent: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
+
+class KnowledgeSearched(_message.Message):
+    __slots__ = ("turn_index", "query", "hits", "best_similarity", "covered", "document_titles", "latency_ms", "failed")
+    TURN_INDEX_FIELD_NUMBER: _ClassVar[int]
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    HITS_FIELD_NUMBER: _ClassVar[int]
+    BEST_SIMILARITY_FIELD_NUMBER: _ClassVar[int]
+    COVERED_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENT_TITLES_FIELD_NUMBER: _ClassVar[int]
+    LATENCY_MS_FIELD_NUMBER: _ClassVar[int]
+    FAILED_FIELD_NUMBER: _ClassVar[int]
+    turn_index: int
+    query: str
+    hits: int
+    best_similarity: float
+    covered: bool
+    document_titles: _containers.RepeatedScalarFieldContainer[str]
+    latency_ms: int
+    failed: bool
+    def __init__(self, turn_index: _Optional[int] = ..., query: _Optional[str] = ..., hits: _Optional[int] = ..., best_similarity: _Optional[float] = ..., covered: _Optional[bool] = ..., document_titles: _Optional[_Iterable[str]] = ..., latency_ms: _Optional[int] = ..., failed: _Optional[bool] = ...) -> None: ...
 
 class ClauseSynthesized(_message.Message):
     __slots__ = ("say_seq", "chars", "tts_ms", "audio_bytes")

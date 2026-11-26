@@ -18,7 +18,7 @@ import logging
 import re
 import uuid
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import psycopg
@@ -40,7 +40,8 @@ POOL_TIMEOUT = 2.0
 # Ordered by distance ONLY: with a second sort key Postgres could no longer read
 # the order from the hnsw index, and would compare the question with every row.
 VECTOR_SQL = (
-    'SELECT id, document_id::text, document_title, section, content'
+    'SELECT id, document_id::text, document_title, section, content,'
+    ' 1 - (embedding <=> %(vector)s) AS similarity'
     ' FROM document_chunks'
     ' WHERE tenant_id = %(tenant_id)s AND embedding_model = %(model)s'
     ' ORDER BY embedding <=> %(vector)s'
@@ -69,6 +70,10 @@ class Hit:
     document_title: str | None
     section: str | None
     content: str
+    # Cosine similarity to the question (0..1), from the meaning ranking only.
+    # Fused RRF scores are relative; this is the absolute "is it even about
+    # that?" signal that tells a covered question from a knowledge gap.
+    similarity: float | None = None
 
 
 def rrf_fuse(
@@ -115,7 +120,12 @@ def search_chunks(
     by_words = [Hit(*row) for row in conn.execute(TEXT_SQL, params).fetchall()]
     # Words first, so they win exact ties: a words hit contains EVERY word of the
     # question, while the vector ranking always returns its 20 nearest, relevant or not.
-    return rrf_fuse([by_words, by_meaning], k)
+    fused = rrf_fuse([by_words, by_meaning], k)
+    # A chunk found by both rankings keeps its words-ranking Hit: give it back
+    # the similarity the meaning ranking measured.
+    similarity = {hit.chunk_id: hit.similarity for hit in by_meaning}
+    return [(replace(hit, similarity=similarity.get(hit.chunk_id, hit.similarity)), score)
+            for hit, score in fused]
 
 
 def has_iterative_scans(pgvector_version: str) -> bool:

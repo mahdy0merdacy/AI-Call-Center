@@ -239,8 +239,8 @@ def test_invalid_json_is_a_400(client):
 def test_search_returns_the_fused_chunks_of_the_requested_tenant(client, store):
     doc_1, doc_2 = str(uuid.uuid4()), str(uuid.uuid4())
     store.found = [
-        (Hit(7, doc_1, 'Stock Policy', '5. Records', 'Kept 10 y.'), 0.032),
-        (Hit(3, doc_2, None, None, 'Audits yearly.'), 0.016),
+        (Hit(7, doc_1, 'Stock Policy', '5. Records', 'Kept 10 y.', 0.71), 0.032),
+        (Hit(3, doc_2, None, None, 'Audits yearly.'), 0.016),   # words ranking only
     ]
     response = client.post('/v1/search', json=search_body(query='  stock records  '))
 
@@ -253,6 +253,7 @@ def test_search_returns_the_fused_chunks_of_the_requested_tenant(client, store):
             'section': '5. Records',
             'content': 'Kept 10 y.',
             'score': 0.032,
+            'similarity': 0.71,
         },
         {
             'document_id': doc_2,
@@ -260,8 +261,10 @@ def test_search_returns_the_fused_chunks_of_the_requested_tenant(client, store):
             'section': None,
             'content': 'Audits yearly.',
             'score': 0.016,
+            'similarity': None,
         },
     ]
+    assert body['best_similarity'] == 0.71      # "do the documents cover this at all"
     assert isinstance(body['took_ms'], int) and body['took_ms'] >= 0
     tenant_id, model, vector, query, k = store.searches[-1]
     assert tenant_id == uuid.UUID(TENANT)

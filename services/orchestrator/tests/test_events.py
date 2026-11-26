@@ -153,3 +153,42 @@ def test_slot_answers_become_filled_or_rejected_events(tenant):
 
     assert capture.emitted[0]["slot_rejected"].utterance == "um no idea"
     assert capture.emitted[1]["slot_filled"].value == "AC4471X209"
+
+
+class _Recorder:
+    """CallEvents stand-in: keeps what the session emits."""
+
+    def __init__(self):
+        self.emitted: list[dict] = []
+
+    def emit(self, **payload):
+        self.emitted.append(payload)
+
+
+def test_a_retrieval_becomes_a_knowledge_searched_event(tenant):
+    rec = _Recorder()
+    session = Session(tenant, agent=None, call_id="call-k", events=rec)
+    session.on_event({"type": "retrieval", "turn": 2, "ok": True, "hits": 3,
+                      "latency_ms": 41, "took_ms": 30, "error": "",
+                      "query": "how long do we keep stock records?", "best_similarity": 0.73,
+                      "covered": True, "titles": ["Stock Control Policy"]})
+    (payload,) = rec.emitted
+    k = payload["knowledge_searched"]
+    assert (k.turn_index, k.hits, k.covered, k.failed) == (2, 3, True, False)
+    assert k.query == "how long do we keep stock records?"
+    assert abs(k.best_similarity - 0.73) < 1e-6
+    assert list(k.document_titles) == ["Stock Control Policy"]
+
+
+def test_a_failed_search_is_recorded_and_an_empty_one_is_not(tenant):
+    rec = _Recorder()
+    session = Session(tenant, agent=None, call_id="call-k", events=rec)
+    session.on_event({"type": "retrieval", "turn": 1, "ok": False, "hits": 0,
+                      "latency_ms": 1500, "took_ms": 0, "error": "timeout",
+                      "query": "parking?", "best_similarity": 0.0, "covered": False,
+                      "titles": []})
+    session.on_event({"type": "retrieval", "turn": 2, "ok": True, "hits": 0,
+                      "latency_ms": 0, "took_ms": 0, "error": "", "query": "",
+                      "best_similarity": 0.0, "covered": False, "titles": []})
+    (payload,) = rec.emitted
+    assert payload["knowledge_searched"].failed is True

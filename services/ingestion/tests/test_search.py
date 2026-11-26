@@ -141,6 +141,20 @@ def test_search_runs_both_queries_for_the_requested_tenant_and_model():
     assert found[0][0] == Hit(2, 'doc-2', 'Stock Policy', 'Records', 'text 2')
 
 
+def test_a_chunk_found_by_both_rankings_keeps_its_similarity():
+    """Fusion keeps the words-ranking Hit for a chunk found by both; the cosine
+    similarity the meaning ranking measured must survive, it is the coverage signal."""
+    vector_rows = [(*row(1), 0.82), (*row(2), 0.64)]     # meaning: with similarity
+    conn = FakeConnection(vector_rows, [row(2), row(5)])    # words: none
+    found = search_chunks(conn, TENANT, MODEL, np.ones(1024, dtype=np.float32), 'records', 3)
+    by_id = {hit.chunk_id: hit.similarity for hit, _ in found}
+    assert by_id == {2: 0.64, 1: 0.82, 5: None}
+
+
+def test_the_vector_query_returns_cosine_similarity():
+    assert '1 - (embedding <=> %(vector)s) AS similarity' in VECTOR_SQL
+
+
 def test_an_exact_tie_goes_to_the_words_ranking():
     # 1: first by meaning only, 9: first by words only. Both score 1/61.
     conn = FakeConnection([row(1)], [row(9)])

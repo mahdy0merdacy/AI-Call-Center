@@ -103,6 +103,7 @@ message Event {
     TurnCompleted turn_completed = 46;
     BargedIn barged_in = 47;
     Escalated escalated = 48;
+    KnowledgeSearched knowledge_searched = 49;
 
     // playback (media edge)
     ClauseSynthesized clause_synthesized = 60;
@@ -277,6 +278,22 @@ message Escalated {
   uint32 turn_index = 1;
   string intent = 2 [(pii) = PII_NONE];
   string reason = 3 [(pii) = PII_NONE];    // max_attempts | requested | …
+}
+
+// One search of a platform client's documents for what the caller asked.
+// What the Insights page's "Knowledge" section is built from: which documents
+// answer callers, and which questions none of them cover.
+message KnowledgeSearched {
+  uint32 turn_index = 1;
+  string query = 2 [(pii) = PII_FREE_TEXT];          // the caller's words
+  uint32 hits = 3;                                    // passages given to the LLM
+  // Cosine similarity of the nearest chunk to the question, 0..1. Absolute, unlike
+  // the fused ranking score: low means the documents are not about this at all.
+  float best_similarity = 4;
+  bool covered = 5;                                   // best_similarity >= the orchestrator's threshold
+  repeated string document_titles = 6 [(pii) = PII_NONE];
+  uint32 latency_ms = 7;
+  bool failed = 8;                                    // search unavailable: no documents this turn
 }
 
 // ── playback ────────────────────────────────────────────────────────────────

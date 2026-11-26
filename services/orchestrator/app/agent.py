@@ -30,7 +30,7 @@ import aiohttp
 
 from .dates import say_dates
 from .flow import CallFlowState, Tenant, TurnAction, route_by_slot, route_scored
-from .knowledge import KnowledgeClient, KnowledgeError, Passage, SearchResult
+from .knowledge import COVERED_MIN, KnowledgeClient, KnowledgeError, Passage, SearchResult
 from .tools import ToolRegistry
 
 log = logging.getLogger("agent")
@@ -107,7 +107,12 @@ class Agent:
         on_event({"type": "retrieval", "turn": self.turn_index, "ok": result is not None,
                   "hits": len(result.passages) if result else 0,
                   "latency_ms": int((time.perf_counter() - t0) * 1000),
-                  "took_ms": result.took_ms if result else 0, "error": error})
+                  "took_ms": result.took_ms if result else 0, "error": error,
+                  "query": user_text,
+                  "best_similarity": (result.best_similarity or 0.0) if result else 0.0,
+                  "covered": result.covered(COVERED_MIN) if result else False,
+                  "titles": sorted({p.title for p in result.passages if p.title})
+                  if result else []})
         return retrieval_prompt(self.tenant.display_name, result)
 
     def _spoken_dates(self, text: str) -> str:
