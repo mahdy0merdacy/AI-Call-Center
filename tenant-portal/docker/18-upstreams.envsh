@@ -22,6 +22,8 @@ aicc_upstream() {
 
 aicc_upstream PORTAL_UPSTREAM "${PORTAL_UPSTREAM:-}"
 aicc_upstream DOCUMENTS_UPSTREAM "${DOCUMENTS_UPSTREAM:-}"
+# Lives in the data stack's namespace; the default suits k3s.
+aicc_upstream INSIGHTS_UPSTREAM "${INSIGHTS_UPSTREAM:-http://insights.aicc-data.svc.cluster.local:8000}"
 if [ -z "${DNS_RESOLVER:-}" ]; then
     echo "18-upstreams.envsh: error: DNS_RESOLVER must be set (127.0.0.11 on Docker, the cluster DNS IP on Kubernetes)" >&2
     exit 1

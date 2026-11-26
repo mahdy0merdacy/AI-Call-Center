@@ -1,0 +1,21 @@
+# Tooling config for the insights service. Not a package: the service runs as
+# `uvicorn --factory app.main:app_from_env`, and the image installs requirements.txt.
+# Same rules as the orchestrator and sentiment services.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"

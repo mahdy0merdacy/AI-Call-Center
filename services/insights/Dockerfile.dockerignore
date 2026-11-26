@@ -1,0 +1,5 @@
+# Only requirements.txt and app/ are copied.
+.venv
+tests
+**/__pycache__
+.coverage

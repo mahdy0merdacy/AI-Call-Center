@@ -1,0 +1,10 @@
+# Insights API runtime, pinned exactly so the image, the vulnerability scan and the
+# SBOM all describe the same thing. Bump deliberately (CI scans every change).
+fastapi==0.165.0
+uvicorn==0.54.0
+# [binary] bundles libpq, so the slim image needs no system packages.
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
+# [crypto] pulls in `cryptography`, required to verify RS256 tokens.
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2

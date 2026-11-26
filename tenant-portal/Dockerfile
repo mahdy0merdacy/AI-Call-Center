@@ -36,10 +36,11 @@ USER 101
 
 ENV PORTAL_UPSTREAM=http://portal:8000 \
     DOCUMENTS_UPSTREAM=http://documents:8000 \
+    INSIGHTS_UPSTREAM=http://insights.aicc-data.svc.cluster.local:8000 \
     DNS_RESOLVER=127.0.0.11 \
     VOICE_TEST_URL=http://localhost:8082
 # envsubst replaces only these in the template, so nginx's own $variables survive.
-ENV NGINX_ENVSUBST_FILTER=^(DNS_RESOLVER|PORTAL_UPSTREAM|DOCUMENTS_UPSTREAM)\$
+ENV NGINX_ENVSUBST_FILTER=^(DNS_RESOLVER|PORTAL_UPSTREAM|DOCUMENTS_UPSTREAM|INSIGHTS_UPSTREAM)\$
 
 # Owned by root and read-only to nginx; config.js and the rendered conf are written
 # under /tmp and /etc/nginx/conf.d at start-up (mount emptyDirs there on k3s with

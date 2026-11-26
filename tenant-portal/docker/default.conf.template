@@ -2,8 +2,8 @@
 # browser sees a single origin (no CORS; the refresh and CSRF cookies stay first-party).
 #
 # Rendered at start-up by the image's entrypoint. envsubst only replaces DNS_RESOLVER,
-# PORTAL_UPSTREAM and DOCUMENTS_UPSTREAM (NGINX_ENVSUBST_FILTER, set in the Dockerfile);
-# every other $variable below is nginx's own.
+# PORTAL_UPSTREAM, DOCUMENTS_UPSTREAM and INSIGHTS_UPSTREAM (NGINX_ENVSUBST_FILTER, set
+# in the Dockerfile); every other $variable below is nginx's own.
 
 # Keep the scheme an ingress in front of us already recorded (on k3s TLS ends there),
 # else this hop's own. Overwriting "https" with "http" would send Django's HTTPS
@@ -30,6 +30,7 @@ server {
     resolver_timeout 5s;
     set $portal_upstream ${PORTAL_UPSTREAM};
     set $documents_upstream ${DOCUMENTS_UPSTREAM};
+    set $insights_upstream ${INSIGHTS_UPSTREAM};
 
     # The documents service takes files up to 25 MB, plus multipart overhead.
     client_max_body_size 26m;
@@ -72,6 +73,9 @@ server {
     # Documents service: knowledge uploads and session links.
     location /api/documents/     { proxy_pass $documents_upstream; }
     location /api/session-links/ { proxy_pass $documents_upstream; }
+
+    # Insights API: each tenant's call analytics (read-only, GET).
+    location /api/insights/ { proxy_pass $insights_upstream; }
 
     # Content-hashed names: a new build gets new names, so these can be cached for good.
     # A missing chunk must 404, not come back as index.html labelled JavaScript.
