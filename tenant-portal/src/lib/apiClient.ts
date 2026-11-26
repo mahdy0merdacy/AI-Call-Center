@@ -69,6 +69,10 @@ trackReachability(api);
 export const documentsApi: AxiosInstance = axios.create({ ...baseConfig, baseURL: env.documentsRoot });
 trackReachability(documentsApi);
 
+/** Client for the insights service (call analytics), same bearer token and refresh handling. */
+export const insightsApi: AxiosInstance = axios.create({ ...baseConfig, baseURL: env.insightsRoot });
+trackReachability(insightsApi);
+
 /* ------------------------------------------------------------------ */
 /* Token responses                                                     */
 /* ------------------------------------------------------------------ */
@@ -171,7 +175,7 @@ function bearerFrom(config: AxiosRequestConfig): string | null {
 
 /**
  * Bearer token, refresh-and-replay on 401 and suspension handling. Installed on
- * every authenticated client (the auth backend and the documents service).
+ * every authenticated client (the auth backend, the documents and insights services).
  */
 function installAuth(client: AxiosInstance): void {
   client.interceptors.request.use((config) => {
@@ -228,6 +232,7 @@ function installAuth(client: AxiosInstance): void {
 
 installAuth(api);
 installAuth(documentsApi);
+installAuth(insightsApi);
 
 function isTransient(error: ApiRequestError): boolean {
   return error.kind === 'network' || error.kind === 'timeout' || error.kind === 'server';
