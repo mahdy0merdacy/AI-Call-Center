@@ -1,0 +1,7 @@
+Web fonts used by the voice test page (static/index.html), copied from the
+@fontsource packages the tenant portal already depends on. All three are
+licensed under the SIL Open Font License 1.1 (https://openfontlicense.org).
+
+- Instrument Serif — Copyright 2022 The Instrument Serif Project Authors
+- Schibsted Grotesk — Copyright 2023 The Schibsted Grotesk Project Authors
+- JetBrains Mono — Copyright 2020 The JetBrains Mono Project Authors

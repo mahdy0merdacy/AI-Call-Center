@@ -25,12 +25,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fractions
+import io
 import json
 import logging
 import os
 import re
 import sys
 import time
+import wave
+from collections import deque
 from pathlib import Path
 
 import aiohttp
@@ -39,6 +43,7 @@ import grpc
 import numpy as np
 from aiohttp import web
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+from aiortc.mediastreams import MediaStreamTrack
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
@@ -60,6 +65,95 @@ log = logging.getLogger("edge")
 # real turns — one triggered a second greeting, another burned a slot retry.
 _ANNOTATION = re.compile(r"^\s*[\[\(][^\]\)]*[\]\)]\s*$")
 
+# What Whisper writes on silence or noise, learned from its YouTube-subtitle
+# training data: whole-utterance "thanks for watching", subtitle credits. Only
+# whole-utterance matches are dropped, so a caller who says "thank you" is kept.
+_HALLUCINATION = re.compile(
+    r"^\W*(thanks? (you )?(so much )?for watching|please subscribe\b.*|"
+    r"subtitles? by\b.*|.*amara\.org.*|sous-titr\w*\b.*|merci d'avoir regard\w*)\W*$",
+    re.IGNORECASE)
+
+
+def is_noise(text: str) -> bool:
+    """A final that is not something the caller said: annotation, empty, hallucination."""
+    return (len(text) < 2 or not any(c.isalnum() for c in text)
+            or bool(_ANNOTATION.match(text)) or bool(_HALLUCINATION.match(text)))
+
+
+# ── the agent's voice, as a WebRTC track ─────────────────────────────────────
+#
+# It used to go to the browser as WAV files over the data channel, played with
+# Web Audio. The browser's echo canceller only subtracts audio it receives as a
+# MEDIA TRACK, so the agent's voice came back through the caller's microphone and
+# STT transcribed it: the agent heard itself and answered itself. Sent as a track,
+# it is the canceller's reference signal and is removed from the mic.
+
+VOICE_RATE = 48000          # what Opus carries
+VOICE_FRAME = 960           # 20 ms
+
+
+def wav_to_voice(wav: bytes) -> np.ndarray:
+    """TTS output (WAV, any rate, 16-bit) -> 48 kHz mono int16."""
+    with wave.open(io.BytesIO(wav)) as w:
+        rate, channels, width = w.getframerate(), w.getnchannels(), w.getsampwidth()
+        raw = w.readframes(w.getnframes())
+    if width != 2:
+        raise ValueError(f"expected 16-bit WAV, got {8 * width}-bit")
+    pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+    if channels > 1:
+        pcm = pcm.reshape(-1, channels).mean(axis=1)
+    if rate != VOICE_RATE and len(pcm):
+        n = round(len(pcm) * VOICE_RATE / rate)
+        pcm = np.interp(np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm)
+    return np.clip(pcm, -32768, 32767).astype(np.int16)
+
+
+class AgentVoice(MediaStreamTrack):
+    """Plays queued speech in real time, silence in between, like a sound card."""
+
+    kind = "audio"
+
+    def __init__(self):
+        super().__init__()
+        self._queue: deque[np.ndarray] = deque()
+        self._buf = np.zeros(0, dtype=np.int16)
+        self._t0: float | None = None
+        self._sent = 0
+
+    def say(self, pcm: np.ndarray) -> None:
+        self._queue.append(pcm)
+
+    def clear(self) -> None:
+        """Barge-in: drop everything not yet played (stops within one frame)."""
+        self._queue.clear()
+        self._buf = np.zeros(0, dtype=np.int16)
+
+    @property
+    def busy(self) -> bool:
+        return bool(self._queue) or len(self._buf) > 0
+
+    def next_frame(self) -> np.ndarray:
+        while len(self._buf) < VOICE_FRAME and self._queue:
+            self._buf = np.concatenate([self._buf, self._queue.popleft()])
+        chunk, self._buf = self._buf[:VOICE_FRAME], self._buf[VOICE_FRAME:]
+        if len(chunk) < VOICE_FRAME:                  # end of speech, or silence
+            chunk = np.concatenate([chunk, np.zeros(VOICE_FRAME - len(chunk), np.int16)])
+        return chunk
+
+    async def recv(self) -> av.AudioFrame:
+        if self._t0 is None:
+            self._t0 = time.monotonic()
+        delay = self._t0 + self._sent / VOICE_RATE - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        frame = av.AudioFrame.from_ndarray(self.next_frame().reshape(1, -1),
+                                           format="s16", layout="mono")
+        frame.sample_rate = VOICE_RATE
+        frame.pts = self._sent
+        frame.time_base = fractions.Fraction(1, VOICE_RATE)
+        self._sent += VOICE_FRAME
+        return frame
+
 
 class Call:
     """One WebRTC call bridged to STT (audio) and the orchestrator (decisions)."""
@@ -79,6 +173,7 @@ class Call:
         self.locale = "en-US"
         self.silence_ms = cfg.get("silence_ms", 900)
         self.t_final: float | None = None
+        self.voice_track = AgentVoice()          # the agent's speech, to the browser
 
     # -- browser ----------------------------------------------------------
     #
@@ -191,7 +286,7 @@ class Call:
                         text = ev.final.text.strip()
                         log.info("FINAL: %s", text)
                         self.send({"type": "final", "text": text, "audio_s": audio_s})
-                        if _ANNOTATION.match(text) or len(text) < 2:
+                        if is_noise(text):
                             log.info("ignoring non-speech final: %r", text[:40])
                             continue
                         self.t_final = time.perf_counter()
@@ -262,8 +357,8 @@ class Call:
     async def end(self):
         """The orchestrator side is over, so the call is: without it nobody answers.
 
-        Stops STT and closes the peer connection, after giving the last spoken
-        reply (already queued on the data channel) a moment to reach the browser.
+        Stops STT and closes the peer connection, after letting the last spoken
+        reply (an escalation message, a goodbye) finish playing.
         """
         if self.closed:
             return
@@ -272,10 +367,11 @@ class Call:
             self.audio_q.put_nowait(None)        # ends the STT stream
         except asyncio.QueueFull:
             pass
-        for _ in range(30):                      # at most 3 s for queued audio
-            if not self.channel or self.channel.bufferedAmount == 0:
+        for _ in range(150):                     # at most 15 s of queued speech
+            if not self.voice_track.busy:
                 break
             await asyncio.sleep(0.1)
+        await asyncio.sleep(0.3)                 # the last frames' network trip
         await self.pc.close()
 
     async def _apply(self, d, http, tts_url: str):
@@ -301,6 +397,7 @@ class Call:
 
         elif kind == "cancel":
             log.info("cancel (%s) — stop speaking", d.cancel.reason)
+            self.voice_track.clear()
             self.send({"type": "barge_in"})
 
         elif kind == "hangup":
@@ -338,8 +435,14 @@ class Call:
             log.info("first audio after %.2fs", dt)
             self.send({"type": "first_audio_s", "value": round(dt, 2)})
             self.t_final = None
-        self.send({"type": "speaking", "text": text})
-        self.send_audio(wav)
+        try:
+            pcm = wav_to_voice(wav)
+        except (wave.Error, ValueError, EOFError) as exc:
+            log.error("TTS returned unplayable audio: %s", exc)
+            return
+        self.send({"type": "speaking", "text": text,
+                   "seconds": round(len(pcm) / VOICE_RATE, 2)})
+        self.voice_track.say(pcm)
 
 
 async def offer(request):
@@ -380,6 +483,8 @@ async def offer(request):
 
     await pc.setRemoteDescription(
         RTCSessionDescription(sdp=params["sdp"], type=params["type"]))
+    # Into the browser's audio transceiver (offered sendrecv): the agent's voice.
+    pc.addTrack(call.voice_track)
     await pc.setLocalDescription(await pc.createAnswer())
     return web.json_response({"sdp": pc.localDescription.sdp,
                               "type": pc.localDescription.type})

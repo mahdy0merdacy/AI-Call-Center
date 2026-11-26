@@ -2,169 +2,635 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Media edge — live STT</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#110f0d">
+<title>Call your agent · AI Call Center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ec5a28'/%3E%3Cg fill='%23110f0d'%3E%3Crect x='6.5' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='11.5' y='8.5' width='3' height='15' rx='1.5'/%3E%3Crect x='16.5' y='5.5' width='3' height='21' rx='1.5'/%3E%3C/g%3E%3Crect x='21.5' y='11' width='3' height='10' rx='1.5' fill='%23fbf7ef'/%3E%3C/svg%3E">
+<link rel="preload" href="/static/fonts/instrument-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  /* Same type and palette as the tenant portal: paper and ink, one signal colour. */
+  @font-face { font-family:"Instrument Serif"; font-style:normal; font-weight:400; font-display:swap;
+               src:url(/static/fonts/instrument-serif-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family:"Instrument Serif"; font-style:italic; font-weight:400; font-display:swap;
+               src:url(/static/fonts/instrument-serif-latin-400-italic.woff2) format("woff2"); }
+  @font-face { font-family:"Schibsted Grotesk"; font-style:normal; font-weight:400 900; font-display:swap;
+               src:url(/static/fonts/schibsted-grotesk-latin-wght-normal.woff2) format("woff2"); }
+  @font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:100 800; font-display:swap;
+               src:url(/static/fonts/jetbrains-mono-latin-wght-normal.woff2) format("woff2"); }
+
   :root {
-    color-scheme: light dark;
-    --fg:#15171c; --dim:#6b7280; --faint:#9aa2af; --line:#dcdfe6; --bg:#fbfbfc;
-    --accent:#2563eb; --ok:#15803d; --warn:#b45309; --err:#b91c1c;
-    --panel: color-mix(in srgb, var(--fg) 3%, transparent);
+    --bg: hsl(40 30% 95%);   --fg: hsl(30 14% 9%);   --card: hsl(40 40% 98.5%);
+    --muted: hsl(30 8% 36%); --faint: hsl(30 8% 52%); --border: hsl(36 18% 84%);
+    --input: hsl(36 14% 76%); --primary: hsl(14 84% 42%); --on-primary: hsl(40 40% 98%);
+    --danger: hsl(354 70% 42%); --grid: hsl(30 14% 9% / .045);
+    --primary-glow: hsl(14 84% 42% / .8); --danger-glow: hsl(354 70% 42% / .8);
+    --shadow: hsl(30 30% 12% / .5);
+
+    /* The console is always dark. */
+    --ink-2: hsl(30 10% 11%); --cream: hsl(40 33% 88%);
+    --amber: hsl(36 96% 58%); --phosphor: hsl(146 64% 52%);
+    --caller: hsl(40 30% 84%); --agent: hsl(14 96% 58%);
+    --line: hsl(40 33% 88% / .1);
+
+    --serif: "Instrument Serif", ui-serif, Georgia, serif;
+    --sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --fg:#e9ebee; --dim:#9aa2af; --faint:#6b7280; --line:#2b303b; --bg:#131519;
-            --accent:#7aa2f7; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; }
+    :root {
+      --bg: hsl(30 10% 6%); --fg: hsl(40 26% 91%); --card: hsl(30 9% 9%);
+      --muted: hsl(36 10% 64%); --faint: hsl(36 8% 46%); --border: hsl(30 8% 18%);
+      --input: hsl(30 8% 24%); --primary: hsl(14 95% 60%); --on-primary: hsl(30 14% 6%);
+      --danger: hsl(354 80% 64%); --grid: hsl(40 26% 91% / .035);
+      --primary-glow: hsl(14 95% 60% / .6); --danger-glow: hsl(354 80% 64% / .6);
+      --shadow: hsl(0 0% 0% / .7);
+    }
   }
-  * { box-sizing:border-box; }
-  body { font:15px/1.6 ui-sans-serif,system-ui,sans-serif; margin:0; padding:1.75rem 1.25rem;
-         background:var(--bg); color:var(--fg); }
-  main { max-width:54rem; margin:0 auto; }
-  h1 { font-size:1.15rem; margin:0 0 .2rem; }
-  .sub { color:var(--dim); margin:0 0 1.4rem; font-size:.9rem; }
-  .sub code { font-size:.85em; }
 
-  .bar { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
-  button { font:inherit; padding:.5rem 1.1rem; border-radius:.45rem; cursor:pointer;
-           border:1px solid var(--line); background:transparent; color:var(--fg); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button[disabled] { opacity:.45; cursor:default; }
-  #state { font-variant:small-caps; color:var(--dim); }
-  #state.live { color:var(--ok); }
-  #state.err { color:var(--err); }
-  meter { width:6.5rem; height:8px; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--fg);
+         font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: 620px; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+    -webkit-mask-image: linear-gradient(#000 20%, transparent); mask-image: linear-gradient(#000 20%, transparent); }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+  ::selection { background: hsl(14 84% 42% / .22); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  .client label { font-size:.75rem; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
-  select { font:inherit; padding:.45rem .6rem; border-radius:.45rem; border:1px solid var(--line);
-           background:var(--bg); color:var(--fg); min-width:14rem; max-width:100%; }
-  .badge { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; line-height:1.6;
-           padding:0 .5rem; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
-  .badge.platform { color:var(--accent); border-color:var(--accent); }
-  .docs { font-size:.85rem; color:var(--dim); }
-  .note { margin:-.4rem 0 1rem; font-size:.85rem; color:var(--dim); }
-  .note.err { color:var(--err); }
-  .note button { margin-left:.5rem; padding:.1rem .7rem; font-size:.8rem; }
+  .page { max-width: 76rem; margin: 0 auto; padding: 0 1rem 3rem; }
+  @media (min-width: 640px) { .page { padding: 0 1.5rem 4rem; } }
 
-  .panel { border:1px solid var(--line); border-radius:.55rem; padding:1rem 1.15rem;
-           background:var(--panel); }
-  #transcript { min-height:8.5rem; font-size:1.05rem; line-height:1.75; }
-  #transcript:empty::before { content:"Committed transcript appears here…"; color:var(--faint); }
-  .final { }
-  .final + .final { margin-top:.35rem; }
-  .reply { margin:.35rem 0 .35rem 0; color:var(--accent); }
-  .reply .utt-mark { color:var(--accent); opacity:.75; }
-  .utt-mark { color:var(--faint); font-size:.75em; margin-right:.5rem;
-              font-family:ui-monospace,monospace; }
-  #partial { margin-top:.6rem; color:var(--dim); font-style:italic; min-height:1.6rem; }
-  #partial::before { content:"partial "; font-style:normal; font-size:.72rem;
-                     letter-spacing:.05em; text-transform:uppercase; color:var(--faint);
-                     margin-right:.4rem; }
-  .legend { display:flex; gap:1.2rem; font-size:.78rem; color:var(--dim); margin:.6rem 0 1rem; }
-  .legend b { font-weight:600; color:var(--fg); }
+  /* ── Header ─────────────────────────────────────────────── */
+  .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+         gap: .9rem 1.5rem; padding: 1.1rem 0; border-bottom: 1px solid var(--border); }
+  .brand { display: inline-flex; align-items: center; gap: .65rem; color: inherit; text-decoration: none; }
+  .brand svg { width: 32px; height: 32px; flex: none; }
+  .brand b { display: block; font: 400 20px/1 var(--serif); letter-spacing: -.01em; }
+  .brand small { display: block; margin-top: 3px; font: 500 9.5px/1 var(--mono); letter-spacing: .18em;
+                 text-transform: uppercase; color: var(--muted); }
 
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));
-           gap:.55rem; margin-top:1rem; }
-  .stat { border:1px solid var(--line); border-radius:.45rem; padding:.5rem .7rem; }
-  .stat b { display:block; font-size:1.1rem; font-variant-numeric:tabular-nums; font-weight:600; }
-  .stat span { font-size:.7rem; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
-  .stat.speaking b { color:var(--ok); }
+  .picker { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; min-width: 0; max-width: 100%; }
+  .picker label { font: 500 10.5px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .select { position: relative; min-width: 0; max-width: 100%; }
+  .select::after { content: ""; position: absolute; right: .9rem; top: 50%; width: 7px; height: 7px;
+                   border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(-70%) rotate(45deg);
+                   pointer-events: none; }
+  select { appearance: none; font: inherit; font-size: 14px; color: var(--fg); background: var(--card);
+           border: 1px solid var(--input); border-radius: 999px; padding: .5rem 2.3rem .5rem .95rem;
+           width: 100%; min-width: 15rem; max-width: 26rem; cursor: pointer; transition: border-color .2s; }
+  select:hover { border-color: var(--muted); }
+  select:disabled { opacity: .55; cursor: default; }
+  .badge { font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: .38rem .6rem;
+           border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.platform { color: var(--primary); border-color: var(--primary); }
+  .docs { font-size: 13px; color: var(--muted); }
+  .note { margin: .9rem 0 0; font-size: 14px; color: var(--muted); }
+  .note.err { color: var(--danger); }
+  .note button { margin-left: .6rem; font: 600 12px var(--sans); padding: .3rem .8rem; border-radius: 999px;
+                 border: 1px solid var(--input); background: var(--card); color: var(--fg); cursor: pointer; }
 
-  #log { margin-top:1rem; font-family:ui-monospace,monospace; font-size:11.5px;
-         color:var(--dim); white-space:pre-wrap; max-height:11rem; overflow-y:auto; }
-  #log .e { color:var(--err); }
+  /* ── Stage ──────────────────────────────────────────────── */
+  /* Phones: intro, console, readouts. Wide screens: readouts under the intro, console beside both. */
+  .stage { display: grid; gap: 2.25rem; align-items: start; padding-top: 2.25rem;
+           grid-template-areas: "intro" "console" "readouts"; }
+  .intro { grid-area: intro; } .console { grid-area: console; } .readouts { grid-area: readouts; }
+  @media (min-width: 1000px) {
+    .stage { grid-template-columns: minmax(0, .92fr) minmax(0, 1.18fr); column-gap: 3.5rem; row-gap: 2.25rem;
+             padding-top: 3.5rem; grid-template-areas: "intro console" "readouts console"; grid-template-rows: auto 1fr; }
+  }
+
+  .eyebrow { display: flex; align-items: center; gap: .6rem; margin: 0 0 1rem;
+             font: 500 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  h1 { margin: 0; font: 400 clamp(2.9rem, 8vw, 4.6rem)/.95 var(--serif); letter-spacing: -.015em; overflow-wrap: anywhere; }
+  h1 em { color: var(--primary); }
+  .lede { max-width: 30rem; margin: 1.25rem 0 0; color: var(--muted); font-size: 15.5px; line-height: 1.65; }
+
+  .dot { position: relative; display: inline-flex; width: 8px; height: 8px; flex: none; }
+  .dot::before, .dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--faint); }
+  .dot.on::before, .dot.on::after { background: var(--phosphor); }
+  .dot.on::before { animation: ping 1.4s cubic-bezier(0, 0, .2, 1) infinite; }
+  .dot.err::after { background: var(--danger); }
+  @keyframes ping { 75%, 100% { transform: scale(2.2); opacity: 0; } }
+
+  /* The call button: a handset orb that rings while idle and breathes with your voice in a call. */
+  .call-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin-top: 2rem; }
+  .call { --level: 0; position: relative; display: inline-flex; align-items: center; gap: .9rem;
+          height: 64px; padding: 0 1.75rem 0 .5rem; border: 0; border-radius: 999px; cursor: pointer;
+          font: 600 16px var(--sans); color: var(--on-primary); background: var(--primary);
+          box-shadow: 0 14px 34px -14px var(--primary-glow);
+          transition: background-color .3s var(--ease), transform .15s, box-shadow .3s; }
+  .call:active { transform: scale(.985); }
+  .call:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  .orb { position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+         background: hsl(0 0% 100% / .16); }
+  .orb svg { width: 20px; height: 20px; transition: transform .4s var(--ease); }
+  .orb .ring { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; }
+  .call[data-state="idle"]:not(:disabled) .ring,
+  .call[data-state="ended"]:not(:disabled) .ring,
+  .call[data-state="failed"]:not(:disabled) .ring { animation: ring 2.2s var(--ease) infinite; }
+  .orb .ring + .ring { animation-delay: 1.1s !important; }
+  @keyframes ring { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(1.95); opacity: 0; } }
+  .orb .level { position: absolute; inset: -4px; border-radius: 50%; border: 2px solid currentColor;
+                transform: scale(calc(1 + var(--level) * .22)); opacity: calc(var(--level) * 1.4); }
+  .call[data-state="connecting"] .orb::after { content: ""; position: absolute; inset: -3px; border-radius: 50%;
+           border: 2px solid transparent; border-top-color: currentColor; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .call[data-state="live"], .call[data-state="ending"] { background: var(--danger); box-shadow: 0 14px 34px -14px var(--danger-glow); }
+  .call[data-state="live"] .orb svg, .call[data-state="ending"] .orb svg { transform: rotate(135deg); }
+
+  .call-meta { display: grid; gap: .2rem; }
+  .state { font: 500 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .state.live { color: var(--primary); }
+  .state.err { color: var(--danger); }
+  .clock { font: 400 28px/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .hint { margin: 1.1rem 0 0; max-width: 30rem; font-size: 13.5px; color: var(--muted); }
+  .hint b { color: var(--fg); font-weight: 600; }
+
+  .readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 0;
+              background: var(--border); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .stat { background: var(--card); padding: .7rem .85rem .75rem; min-width: 0; }
+  .stat dt { font: 500 9.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat dd { margin: .3rem 0 0; font: 400 21px/1.1 var(--serif); font-variant-numeric: tabular-nums;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat dd.small { font: 500 12px/1.6 var(--mono); }
+  .stat.speaking dd { color: var(--primary); }
+
+  /* ── Console ────────────────────────────────────────────── */
+  .console { position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: 18px;
+             background: var(--ink-2); color: var(--cream); border: 1px solid var(--line);
+             box-shadow: 0 1px 0 hsl(40 33% 88% / .05) inset, 0 40px 80px -40px var(--shadow); }
+  .console::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(70% 45% at 85% 100%, hsl(14 92% 54% / .12), transparent 70%); }
+  .c-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+            padding: .8rem 1rem; border-bottom: 1px solid var(--line);
+            font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  .c-head .who { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+  .c-head .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c-head .sep { color: hsl(40 33% 88% / .25); }
+  .c-head .meta { color: hsl(40 33% 88% / .38); }
+  .c-head .t { color: hsl(40 33% 88% / .75); font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .c-head .meta { display: none; } }
+  .wave { position: relative; height: 84px; padding: .75rem 1rem 0; }
+  .wave canvas { display: block; width: 100%; height: 100%; }
+
+  .transcript { position: relative; display: flex; flex-direction: column; gap: .8rem;
+                height: clamp(320px, 52vh, 460px); overflow-y: auto; padding: 1.5rem 1rem 1.1rem;
+                scrollbar-width: thin; scrollbar-color: hsl(40 33% 88% / .15) transparent;
+                -webkit-mask-image: linear-gradient(transparent, #000 2.5rem); mask-image: linear-gradient(transparent, #000 2.5rem); }
+  .transcript > :first-child { margin-top: auto; }
+  .empty { margin: auto; text-align: center; padding: 1rem; }
+  .empty p { margin: 0; font: 400 34px/1 var(--serif); color: var(--cream); }
+  .empty p em { color: var(--agent); }
+  .empty small { display: block; margin-top: .8rem; font: 500 10.5px var(--mono); letter-spacing: .14em;
+                 text-transform: uppercase; color: hsl(40 33% 88% / .45); }
+
+  .row { display: grid; grid-template-columns: 4.1rem minmax(0, 1fr); column-gap: .8rem; animation: rise .35s var(--ease) both; }
+  @media (min-width: 640px) { .row { grid-template-columns: 4.6rem minmax(0, 1fr); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .tag { padding-top: .32rem; font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; white-space: nowrap; }
+  .tag i { font-style: normal; opacity: .55; margin-left: .3rem; letter-spacing: .05em; }
+  .caller .tag { color: hsl(40 30% 84% / .55); }
+  .caller p { margin: 0; color: var(--caller); font-size: 15.5px; line-height: 1.6; }
+  .w-soft { opacity: .55; text-decoration: underline dotted hsl(40 30% 84% / .55); text-underline-offset: 4px; }
+  .listen-cursor { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%;
+                   background: var(--caller); vertical-align: middle; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .2; } }
+
+  .agent .tag { color: var(--agent); }
+  .agent p { margin: 0; font: 400 20px/1.35 var(--serif); color: hsl(40 40% 96%); }
+  @media (min-width: 640px) { .agent p { font-size: 21px; } }
+  .agent .cut { opacity: .35; text-decoration: line-through hsl(14 96% 58% / .7); }
+  .caret { display: inline-block; width: .5ch; height: 1em; margin-left: 2px; vertical-align: -.12em;
+           background: var(--agent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .thinking { display: inline-flex; align-items: center; gap: .55rem; padding-top: .3rem;
+              font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--amber); }
+  .thinking span { display: inline-flex; gap: 4px; }
+  .thinking span b { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  .thinking span b:nth-child(2) { animation-delay: .16s; } .thinking span b:nth-child(3) { animation-delay: .32s; }
+
+  .event .arrow { padding-top: .12rem; text-align: right; font: 11px var(--mono); color: hsl(40 33% 88% / .25); }
+  .event div { display: flex; align-items: center; gap: .55rem; min-width: 0; font: 11.5px var(--mono); color: hsl(40 33% 88% / .62); }
+  .event .chip { flex: none; padding: .05rem .4rem; border-radius: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+                 color: var(--amber); background: hsl(36 96% 58% / .1); border: 1px solid hsl(36 96% 58% / .3); }
+  .event .chip.ok { color: var(--phosphor); background: hsl(146 64% 52% / .1); border-color: hsl(146 64% 52% / .3); }
+  .event .chip.alert { color: var(--agent); background: hsl(14 96% 58% / .1); border-color: hsl(14 96% 58% / .35); }
+  .event .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event .ms { margin-left: auto; flex: none; color: hsl(40 33% 88% / .4); font-variant-numeric: tabular-nums; }
+  .event.faint div { color: hsl(40 33% 88% / .35); }
+  .endline { display: flex; align-items: center; gap: .8rem; padding-top: .3rem; animation: rise .35s var(--ease) both;
+             font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--phosphor); text-align: center; }
+  .endline::before, .endline::after { content: ""; flex: 1; min-width: 1rem; height: 1px; background: hsl(146 64% 52% / .25); }
+  .endline.err { color: var(--agent); } .endline.err::before, .endline.err::after { background: hsl(14 96% 58% / .3); }
+
+  .stages { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line);
+            font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .stage-cell { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem .85rem;
+                color: hsl(40 33% 88% / .4); transition: background-color .3s, color .3s; min-width: 0; }
+  .stage-cell + .stage-cell { border-left: 1px solid var(--line); }
+  .stage-cell .l { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+  .stage-cell i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: hsl(40 33% 88% / .2); transition: all .3s; }
+  .stage-cell b { font-weight: 600; }
+  .stage-cell .word { text-transform: none; letter-spacing: 0; white-space: nowrap; }
+  .stage-cell .v { text-transform: none; font-variant-numeric: tabular-nums; white-space: nowrap;
+                   overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .stage-cell.on { background: hsl(40 33% 88% / .07); color: var(--cream); }
+  .stage-cell.on[data-stage="stt"] i { background: var(--caller); box-shadow: 0 0 10px var(--caller); }
+  .stage-cell.on[data-stage="llm"] i { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .stage-cell.on[data-stage="tts"] i { background: var(--agent); box-shadow: 0 0 10px var(--agent); }
+  .stage-cell { gap: .75rem; }
+  @media (max-width: 1399px) { .stage-cell .word { display: none; } }
+  @media (max-width: 400px) { .stage-cell { padding: .65rem .6rem; } }
+
+  /* ── Engineering log ────────────────────────────────────── */
+  details.log { margin-top: 2.5rem; border-top: 1px solid var(--border); }
+  details.log summary { cursor: pointer; padding: 1rem 0; list-style: none; display: flex; align-items: center; gap: .6rem;
+                        font: 500 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  details.log summary::-webkit-details-marker { display: none; }
+  details.log summary::before { content: "+"; display: grid; place-items: center; width: 18px; height: 18px;
+                                border: 1px solid var(--input); border-radius: 50%; font-size: 12px; letter-spacing: 0; }
+  details.log[open] summary::before { content: "–"; }
+  #log { font: 11.5px/1.6 var(--mono); color: var(--muted); white-space: pre-wrap; max-height: 16rem; overflow-y: auto;
+         padding: .9rem 1rem; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+  #log:empty::before { content: "Nothing yet."; color: var(--faint); }
+  #log .e { color: var(--danger); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
 </style>
 </head>
 <body>
-<main>
+<div class="page">
 
-<h1>Media edge → STT <span id="who" hidden style="font-weight:400;font-size:.8em;color:var(--dim)"></span></h1>
-<p class="sub">Mic → WebRTC → STT → LLM → TTS → back to your speakers. Talk, pause, and the
-agent replies out loud.</p>
-
-<div class="bar client">
-  <label for="client">Client</label>
-  <select id="client" disabled><option value="">Loading clients…</option></select>
-  <span id="client-badge" class="badge" hidden></span>
-  <span id="client-docs" class="docs" hidden></span>
-</div>
+<header class="top">
+  <a class="brand" href="/" aria-label="AI Call Center voice test, home">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="hsl(14 92% 54%)"/>
+      <g fill="hsl(30 14% 6%)"><rect x="6.5" y="13" width="3" height="6" rx="1.5"/><rect x="11.5" y="8.5" width="3" height="15" rx="1.5"/><rect x="16.5" y="5.5" width="3" height="21" rx="1.5"/></g>
+      <rect x="21.5" y="11" width="3" height="10" rx="1.5" fill="hsl(40 40% 97%)"/>
+    </svg>
+    <span><b>AI Call Center</b><small>Voice test</small></span>
+  </a>
+  <div class="picker">
+    <label for="client">Client</label>
+    <span class="select"><select id="client" disabled><option value="">Loading clients…</option></select></span>
+    <span id="client-badge" class="badge" hidden></span>
+    <span id="client-docs" class="docs" hidden></span>
+  </div>
+</header>
 <p id="client-msg" class="note" hidden></p>
 
-<div class="bar">
-  <button id="start" class="primary">Start mic</button>
-  <button id="stop" disabled>Stop</button>
-  <span id="state">idle</span>
-  <meter id="meter" min="0" max="1" value="0" title="input level"></meter>
-</div>
+<main class="stage">
+  <section class="intro" aria-labelledby="title">
+    <p class="eyebrow"><span class="dot" id="eyebrow-dot"></span><span>Mic → STT → LLM → TTS</span></p>
+    <h1 id="title"><span id="h-lead">Talk to</span><br><em id="h-name">your agent</em></h1>
+    <p class="lede">Press call, allow the microphone and speak naturally. Your words stream in as they are
+      recognised; the agent's answer is typed out as it is spoken.</p>
 
-<div class="legend">
-  <span><b>Committed</b> — what the LLM would receive</span>
-  <span><i>partial</i> — display only, may be revised</span>
-  <span style="color:var(--accent)"><b>bot</b> — agent reply (spoken)</span>
-</div>
+    <div class="call-row">
+      <button id="call" class="call" data-state="idle" aria-describedby="state">
+        <span class="orb" aria-hidden="true">
+          <span class="ring"></span><span class="ring"></span><span class="level"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </span>
+        <span id="call-label">Call</span>
+      </button>
+      <div class="call-meta">
+        <span id="state" class="state" role="status">idle</span>
+        <span id="clock" class="clock" aria-hidden="true">00:00</span>
+      </div>
+    </div>
+    <p class="hint">Interrupt whenever you like: the agent <b>stops talking and listens</b>, like a person would.</p>
+  </section>
 
-<div class="panel">
-  <div id="transcript"></div>
-  <div id="partial"></div>
-</div>
+  <dl class="readouts" aria-label="Call readouts">
+      <div class="stat"><dt>audio sent</dt><dd id="s-audio">0.0s</dd></div>
+      <div class="stat" id="s-speak-box"><dt>vad</dt><dd id="s-speak">—</dd></div>
+      <div class="stat"><dt>utterances</dt><dd id="s-utts">0</dd></div>
+      <div class="stat"><dt>words</dt><dd id="s-words">0</dd></div>
+      <div class="stat"><dt>first partial</dt><dd id="s-first">—</dd></div>
+      <div class="stat"><dt>first audio</dt><dd id="s-reply">—</dd></div>
+      <div class="stat"><dt>flow</dt><dd id="s-flow" class="small">—</dd></div>
+      <div class="stat"><dt>slots filled</dt><dd id="s-slots" class="small">—</dd></div>
+      <div class="stat"><dt>tool outcome</dt><dd id="s-outcome" class="small">—</dd></div>
+  </dl>
 
-<div class="stats">
-  <div class="stat"><b id="s-audio">0.0s</b><span>audio sent</span></div>
-  <div class="stat" id="s-speak-box"><b id="s-speak">—</b><span>vad</span></div>
-  <div class="stat"><b id="s-utts">0</b><span>utterances</span></div>
-  <div class="stat"><b id="s-words">0</b><span>words committed</span></div>
-  <div class="stat"><b id="s-first">—</b><span>first partial</span></div>
-  <div class="stat"><b id="s-reply">—</b><span>first audio</span></div>
-  <div class="stat"><b id="s-flow">—</b><span>flow</span></div>
-  <div class="stat"><b id="s-slots">—</b><span>slots filled</span></div>
-  <div class="stat"><b id="s-outcome">—</b><span>tool outcome</span></div>
-</div>
-
-<div id="log"></div>
-
+  <section class="console" aria-label="Call transcript">
+    <div class="c-head">
+      <div class="who">
+        <span class="dot" id="c-dot"></span>
+        <span id="c-status">Ready</span>
+        <span class="sep">/</span>
+        <span id="c-name">—</span>
+        <span class="meta" id="c-meta"></span>
+      </div>
+      <span class="t" id="c-clock">00:00</span>
+    </div>
+    <div class="wave" aria-hidden="true"><canvas id="wave"></canvas></div>
+    <div id="transcript" class="transcript">
+      <div class="empty" id="empty"><p>Say <em>hello.</em></p><small>Your words appear here as you speak</small></div>
+    </div>
+    <div class="stages" aria-hidden="true">
+      <div class="stage-cell" data-stage="stt" title="You stop talking → final transcript (the endpointing silence plus recognition)">
+        <span class="l"><i></i><b>STT</b><span class="word">Listens</span></span><span class="v" id="v-stt">—</span></div>
+      <div class="stage-cell" data-stage="llm" title="What the orchestrator decided for this turn: the intent, an open question, or the tool it called">
+        <span class="l"><i></i><b>LLM</b><span class="word">Thinks</span></span><span class="v" id="v-llm">—</span></div>
+      <div class="stage-cell" data-stage="tts" title="Final transcript → first audio, measured by the edge">
+        <span class="l"><i></i><b>TTS</b><span class="word">Speaks</span></span><span class="v" id="v-tts">—</span></div>
+    </div>
+    <div class="sr-only" aria-live="polite" id="announce"></div>
+  </section>
 </main>
+
+<details class="log"><summary>Engineering log</summary><div id="log"></div></details>
+
+</div>
 <script>
 const $ = id => document.getElementById(id);
 // /w/<slug> is the per-company widget URL — the slug identifies the tenant.
 const TENANT_SLUG = (location.pathname.match(/^\/w\/([\w-]+)/) || [])[1] || null;
+// Finals the edge never answers (server.py is_noise): annotations, punctuation, blips.
+// The server also drops known STT hallucinations; a thinking row that gets no answer times out.
+const ANNOTATION = /^\s*[\[\(][^\]\)]*[\]\)]\s*$/;
+const isNoise = t => t.length < 2 || !/[\p{L}\p{N}]/u.test(t) || ANNOTATION.test(t);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Rough network + jitter-buffer delay before the agent's voice track is heard.
+const VOICE_LATENCY_S = .15;
 const t0 = performance.now();
-let pc, stream, audioCtx, rafId, chan, tStart = null, firstAt = null, utts = 0, words = 0;
-let playCtx = null, playHead = 0, playing = [], replyEl = null;
-let inCall = false, clientsReady = false;
 
-// Sequential gapless-ish playback. Each binary frame is one clause of WAV, and
-// they arrive in order, so schedule each to start when the previous one ends.
+let pc, stream, audioCtx, micAnalyser, chan, tStart = null, firstAt = null, utts = 0, words = 0;
+// The agent's voice arrives either as a WebRTC track (the edge sends `speaking.seconds`)
+// or, from older edges, as WAV clauses over the data channel, played with Web Audio.
+let playCtx = null, playAnalyser = null, playHead = 0, playing = [];
+let remoteAudio = null, voiceAnalyser = null, speakUntil = 0;
+let inCall = false, clientsReady = false, callState = 'idle', endedAt = null, endTimer = null;
+let tenantName = null;
+
+// Transcript state.
+let callerRow = null, prevPartial = [], thinkingRow = null, thinkingTimer = null, reply = null;
+let pendingClauses = [], segments = [], awaitingReply = false, callerSpeaking = false, wasTalking = false;
+let tSpeechEnd = null, silenceMs = 0, tFinal = null, lastFlow = '';
+const caret = Object.assign(document.createElement('span'), { className: 'caret' });
+
+// ── Small helpers ─────────────────────────────────────────────
+const fmtClock = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const wallNow = () => performance.now() / 1000;
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+function log(msg, err) {
+  const at = ((performance.now() - t0) / 1000).toFixed(2).padStart(6);
+  $('log').append(el('span', err ? 'e' : '', `[${at}s] ${msg}\n`));
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function announce(text) { $('announce').textContent = text; }
+
+function setState(text, cls) { $('state').textContent = text; $('state').className = 'state ' + (cls || ''); }
+
+function setCallState(s) {
+  callState = s;
+  const b = $('call');
+  b.dataset.state = s;
+  const name = tenantName || TENANT_SLUG || 'your agent';
+  $('call-label').textContent = { idle: `Call ${name}`, connecting: 'Connecting…', live: 'Hang up',
+                                  ending: 'Hanging up…', ended: 'Call again', failed: 'Try again' }[s] || 'Call';
+  b.setAttribute('aria-label', s === 'live' ? `Hang up the call with ${name}` : `Call ${name}`);
+  b.disabled = !TENANT_SLUG || s === 'connecting' || s === 'ending';
+  const live = s === 'live';
+  $('c-dot').className = 'dot' + (live ? ' on' : s === 'failed' ? ' err' : '');
+  $('eyebrow-dot').className = 'dot' + (live ? ' on' : '');
+  $('c-status').textContent = { live: 'Live', connecting: 'Dialling', ending: 'Ending', ended: 'Ended', failed: 'Failed' }[s] || 'Ready';
+}
+
+function setTenantName(name) {
+  tenantName = name;
+  $('h-name').textContent = name;
+  $('c-name').textContent = name;
+  document.title = `Call ${name} · AI Call Center`;
+  if (callState === 'idle' || callState === 'ended' || callState === 'failed') setCallState(callState);
+}
+
+// ── Transcript rows ───────────────────────────────────────────
+// Rows stick to the bottom while the reader is there; scrolling up to reread pauses that.
+function stickToBottom(fn) {
+  const box = $('transcript');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  fn();
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function append(node, beforeReply = false) {
+  $('empty')?.remove();
+  stickToBottom(() => {
+    // Pipeline events belong before the agent's pending reply; speech goes in order.
+    if (beforeReply && thinkingRow?.isConnected) thinkingRow.before(node);
+    else $('transcript').append(node);
+  });
+  return node;
+}
+
+function row(kind, tag) {
+  const r = el('div', `row ${kind}`);
+  r.append(el('span', 'tag', tag));
+  return r;
+}
+
+function eventRow(chip, text, ms, mood) {
+  const r = el('div', 'row event' + (mood === 'faint' ? ' faint' : ''));
+  r.append(el('span', 'arrow', '↳'));
+  const d = el('div');
+  d.append(el('span', 'chip' + (mood && mood !== 'faint' ? ' ' + mood : ''), chip), el('span', 'txt', text));
+  if (ms != null) d.append(el('span', 'ms', ms));
+  r.append(d);
+  return append(r, true);
+}
+
+function endLine(text, err) { append(el('div', 'endline' + (err ? ' err' : ''), text)); }
+
+// Live caller line from STT partials. Words that survived from the previous partial are
+// stable; new or revised ones stay soft until the recogniser commits the utterance.
+function showPartial(text) {
+  const wordsNow = text.trim().split(/\s+/).filter(Boolean);
+  if (!callerRow) {
+    callerRow = row('caller', 'You');
+    callerRow.append(el('p'));
+    append(callerRow);
+  }
+  let stable = 0;
+  while (stable < wordsNow.length && stable < prevPartial.length &&
+         wordsNow[stable].toLowerCase() === prevPartial[stable].toLowerCase()) stable++;
+  prevPartial = wordsNow;
+  const p = callerRow.querySelector('p');
+  stickToBottom(() => {
+    p.replaceChildren(...wordsNow.flatMap((w, i) => [i ? ' ' : '', el('span', i >= stable ? 'w-soft' : '', w)]),
+                      el('span', 'listen-cursor'));
+  });
+}
+
+function commitFinal(text) {
+  const r = callerRow || append(row('caller', 'You'));
+  if (!r.querySelector('p')) r.append(el('p'));
+  r.querySelector('.tag').replaceChildren('You', el('i', '', `#${++utts}`));
+  r.querySelector('p').textContent = text;
+  callerRow = null; prevPartial = [];
+  words += (text.match(/\S+/g) || []).length;
+  $('s-words').textContent = words;
+  $('s-utts').textContent = utts;
+  announce(`You said: ${text}`);
+}
+
+function dropPartial() { callerRow?.remove(); callerRow = null; prevPartial = []; }
+
+function clearThinking() {
+  clearTimeout(thinkingTimer);
+  thinkingRow?.remove(); thinkingRow = null;
+}
+
+function showThinking(label = 'Thinking') {
+  if (thinkingRow?.isConnected) return;
+  thinkingRow = row('agent', 'Agent');
+  const t = el('span', 'thinking');
+  const dots = el('span');
+  dots.append(el('b'), el('b'), el('b'));
+  t.append(dots, label);
+  thinkingRow.append(t);
+  append(thinkingRow);
+  // No answer is coming (a final the server filtered, a silent turn): don't spin forever.
+  clearTimeout(thinkingTimer);
+  thinkingTimer = setTimeout(() => {
+    if (thinkingRow?.isConnected && !thinkingRow.querySelector('p')) { clearThinking(); awaitingReply = false; }
+  }, 15000);
+}
+
+// The agent's turn: the thinking row becomes the reply, clauses are typed into it.
+function replyRow() {
+  if (reply) return reply;
+  clearTimeout(thinkingTimer);
+  let r = thinkingRow?.isConnected ? thinkingRow : null;
+  thinkingRow = null;
+  if (r) r.querySelector('.thinking')?.remove();
+  else r = append(row('agent', 'Agent'));
+  const p = el('p');
+  r.append(p);
+  reply = { row: r, p };
+  return reply;
+}
+
+// A clause is typed across its own audio, so text and voice finish together.
+function addSegment(text, start, dur, clock) {
+  const target = replyRow();
+  if (target.p.childNodes.length) target.p.append(' ');
+  const span = el('span');
+  target.p.append(span);
+  const seg = { span, text, start, dur: Math.max(dur, .25), clock, done: false };
+  segments.push(seg);
+  return seg;
+}
+
+const nowFor = clock => (clock === 'audio' && playCtx ? playCtx.currentTime : wallNow());
+
+function renderSegments() {
+  let active = null;
+  for (const s of segments) {
+    if (s.done) continue;
+    const p = REDUCED ? 1 : Math.min(1, Math.max(0, (nowFor(s.clock) - s.start) / s.dur));
+    const n = Math.round(p * s.text.length);
+    if (s.span.textContent.length !== n) stickToBottom(() => { s.span.textContent = s.text.slice(0, n); });
+    if (p >= 1 && s.clock !== 'token') s.done = true;
+    else if (p > 0 && p < 1) active = s;
+  }
+  if (active) { if (caret.previousSibling !== active.span) active.span.after(caret); }
+  else caret.remove();
+  segments = segments.filter(s => !s.done);
+}
+
+// Barge-in or hang-up: what was said stays, what wasn't is struck through.
+function cutSegments() {
+  let cut = false;
+  for (const s of segments) {
+    const p = Math.min(1, Math.max(0, (nowFor(s.clock) - s.start) / s.dur));
+    let n = Math.round(p * s.text.length);
+    if (n > 0 && n < s.text.length) n = s.text.lastIndexOf(' ', n) + 1;   // whole words only
+    s.span.textContent = s.text.slice(0, n);
+    if (n < s.text.length) { s.span.after(el('span', 'cut', s.text.slice(n))); cut = true; }
+  }
+  segments = []; caret.remove();
+  if (cut && reply) reply.row.querySelector('.tag').replaceChildren('Agent', el('i', '', 'cut'));
+}
+
+// ── Audio out ─────────────────────────────────────────────────
+function ensurePlayCtx() {
+  if (playCtx) return;
+  playCtx = new AudioContext();
+  playAnalyser = playCtx.createAnalyser();
+  playAnalyser.fftSize = 512; playAnalyser.smoothingTimeConstant = .6;
+  playAnalyser.connect(playCtx.destination);
+}
+
+// Older edges: each binary frame is one clause of WAV, in order, so schedule each to
+// start when the previous one ends, and type its text across exactly that window.
 async function playWav(buf) {
-  if (!playCtx) playCtx = new AudioContext();
+  ensurePlayCtx();
   if (playCtx.state === 'suspended') await playCtx.resume();
+  const clause = pendingClauses.shift();
   let decoded;
   try { decoded = await playCtx.decodeAudioData(buf); }
-  catch (e) { log('audio decode failed: ' + e.message, true); return; }
+  catch (e) { log('audio decode failed: ' + e.message, true); if (clause) addSegment(clause, wallNow(), clause.length * .05, 'wall'); return; }
   const src = playCtx.createBufferSource();
   src.buffer = decoded;
-  src.connect(playCtx.destination);
+  src.connect(playAnalyser);
   const now = playCtx.currentTime;
   if (playHead < now) playHead = now;
   src.start(playHead);
+  if (clause) addSegment(clause, playHead, decoded.duration, 'audio');
   playHead += decoded.duration;
   playing.push(src);
   src.onended = () => { playing = playing.filter(x => x !== src); };
-  $('s-speak').textContent = 'bot talking';
 }
+
+// Newer edges: the voice plays from the track; `speaking` says how long each clause lasts.
+// Clauses queue on the edge the same way, one after the other.
+function sayOnTrack(text, seconds) {
+  const begin = Math.max(speakUntil, wallNow() + VOICE_LATENCY_S);
+  speakUntil = begin + seconds;
+  if (text) addSegment(text, begin, seconds, 'wall');
+}
+
+function attachVoiceTrack(e) {
+  const s = e.streams[0] || new MediaStream([e.track]);
+  if (!remoteAudio) { remoteAudio = new Audio(); remoteAudio.autoplay = true; }
+  remoteAudio.srcObject = s;
+  remoteAudio.play().catch(err => log('audio play blocked: ' + err.message, true));
+  // A tap for the waveform only: the <audio> element does the playing, so this is not
+  // connected to the speakers (that would play the agent twice).
+  try {
+    ensurePlayCtx();
+    voiceAnalyser = playCtx.createAnalyser();
+    voiceAnalyser.fftSize = 512; voiceAnalyser.smoothingTimeConstant = .6;
+    playCtx.createMediaStreamSource(s).connect(voiceAnalyser);
+  } catch (err) { voiceAnalyser = null; }
+  log('agent voice track connected');
+}
+
+const trackTalking = () => wallNow() < speakUntil;
+const wavTalking = () => !!playCtx && playing.length > 0 && playHead > playCtx.currentTime + .02;
+const agentTalking = () => trackTalking() || wavTalking();
 
 function stopPlayback() {
   playing.forEach(s => { try { s.stop(); } catch (e) {} });
   playing = [];
   if (playCtx) playHead = playCtx.currentTime;
+  speakUntil = 0;   // the edge already cut the voice track
 }
 
-function log(msg, err) {
-  const at = ((performance.now() - t0) / 1000).toFixed(2).padStart(6);
-  const line = document.createElement('span');
-  if (err) line.className = 'e';
-  line.textContent = `[${at}s] ${msg}\n`;
-  $('log').append(line);
-  $('log').scrollTop = $('log').scrollHeight;
-}
-
+// ── Audio in ──────────────────────────────────────────────────
 function waitForIce(pc) {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise(res => {
@@ -174,127 +640,254 @@ function waitForIce(pc) {
   });
 }
 
-function levelMeter(stream) {
+function listenToMic(stream) {
   audioCtx = new AudioContext();
-  const an = audioCtx.createAnalyser(); an.fftSize = 512;
-  audioCtx.createMediaStreamSource(stream).connect(an);
-  const buf = new Uint8Array(an.fftSize);
-  const tick = () => {
-    an.getByteTimeDomainData(buf);
-    let peak = 0;
-    for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
-    $('meter').value = peak;
-    rafId = requestAnimationFrame(tick);
-  };
-  tick();
+  micAnalyser = audioCtx.createAnalyser();
+  micAnalyser.fftSize = 512; micAnalyser.smoothingTimeConstant = .55;
+  audioCtx.createMediaStreamSource(stream).connect(micAnalyser);
 }
 
-// Committed finals accumulate; the partial is transient and rendered separately.
-// Keeping them visually distinct is the whole point — one feeds the LLM, one doesn't.
-function commitFinal(text) {
-  const d = document.createElement('div');
-  d.className = 'final';
-  const m = document.createElement('span');
-  m.className = 'utt-mark';
-  m.textContent = `#${++utts}`;
-  d.append(m, document.createTextNode(text));
-  $('transcript').append(d);
-  $('partial').textContent = '';
-  words += (text.trim().match(/\S+/g) || []).length;
-  $('s-words').textContent = words;
-  $('s-utts').textContent = utts;
+// ── Waveform: real audio, coloured by who is speaking ─────────
+const BARS = 64;
+const wave = { canvas: $('wave'), ctx: $('wave').getContext('2d'), w: 0, h: 0,
+               heights: new Float32Array(BARS), think: 0 };
+const timeBuf = new Uint8Array(512), freqBuf = new Uint8Array(256);
+const CREAM = [40, 30, 84], AMBER = [36, 96, 58], SIGNAL = [14, 96, 58];
+
+function resizeWave() {
+  const r = wave.canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+  wave.w = r.width; wave.h = r.height;
+  wave.canvas.width = Math.max(1, Math.round(r.width * dpr));
+  wave.canvas.height = Math.max(1, Math.round(r.height * dpr));
+  wave.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+new ResizeObserver(resizeWave).observe(wave.canvas);
+
+// Speech energy sits in the low bins: spread them from the centre outwards.
+function spectrum(analyser, gain) {
+  analyser.getByteFrequencyData(freqBuf);
+  const out = new Float32Array(BARS), half = (BARS - 1) / 2;
+  for (let i = 0; i < BARS; i++) {
+    const d = Math.abs(i - half) / half;
+    const bin = 2 + Math.floor(Math.pow(d, 1.25) * 46);
+    out[i] = Math.min(1, Math.pow(freqBuf[bin] / 255, 1.6) * gain);
+  }
+  return out;
+}
+
+function micLevel() {
+  if (!micAnalyser) return 0;
+  micAnalyser.getByteTimeDomainData(timeBuf);
+  let peak = 0;
+  for (const v of timeBuf) peak = Math.max(peak, Math.abs(v - 128) / 128);
+  return peak;
+}
+
+function currentVoice() {
+  if (agentTalking()) return 'agent';
+  if (callerSpeaking) return 'caller';
+  if (awaitingReply && inCall) return 'thinking';
+  return 'idle';
+}
+
+let lastFrame = performance.now();
+function drawWave(time, voice) {
+  const { ctx, w, h, heights } = wave;
+  const dt = Math.min(.1, (time - lastFrame) / 1000); lastFrame = time;
+  wave.think += ((voice === 'thinking' ? 1 : 0) - wave.think) * (1 - Math.exp(-dt * 6));
+  ctx.clearRect(0, 0, w, h);
+  if (!w || !h) return;
+
+  const t = time / 1000, half = (BARS - 1) / 2;
+  const mic = inCall && micAnalyser ? spectrum(micAnalyser, 2.4) : null;
+  const outAnalyser = trackTalking() ? voiceAnalyser : wavTalking() ? playAnalyser : null;
+  const out = outAnalyser ? spectrum(outAnalyser, 2.1) : null;
+  const sweep = (Math.sin(t * 2.4) * .5 + .5) * (BARS - 1);
+  const slot = w / BARS, bw = Math.max(2, slot * .5);
+
+  for (let i = 0; i < BARS; i++) {
+    const d = Math.abs(i - half) / half;
+    const bell = .25 + .75 * Math.pow(Math.cos(d * Math.PI / 2), 1.3);
+    const idle = .07 + .05 * Math.sin(i * .4 + t * 1.3);
+    const think = wave.think * (.08 + .42 * Math.exp(-(((i - sweep) / (BARS * .07)) ** 2)));
+    const you = mic ? mic[i] * bell : 0;
+    const agent = out ? out[i] * bell : 0;
+    let target = Math.max(idle, think, you, agent), color = CREAM;
+    if (agent > idle && target === agent) {
+      const p = i / (BARS - 1);
+      color = SIGNAL.map((c, j) => c + (AMBER[j] - c) * p);
+    } else if (think > idle && target === think) color = AMBER;
+    if (REDUCED) target = Math.max(idle, .3 * bell);
+    // Fast attack, slower release: reads like a level meter.
+    heights[i] += (target - heights[i]) * (target > heights[i] ? .55 : .14);
+    const bh = Math.max(bw, h * .92 * heights[i]);
+    ctx.fillStyle = `hsl(${color[0]} ${color[1]}% ${color[2]}% / ${.5 + .5 * Math.min(1, heights[i] * 2)})`;
+    ctx.beginPath();
+    ctx.roundRect(i * slot + (slot - bw) / 2, (h - bh) / 2, bw, bh, bw / 2);
+    ctx.fill();
+  }
+}
+
+// One loop drives the waveform, typing, the mic ring, the clock and the stage lights.
+const stageCells = [...document.querySelectorAll('.stage-cell')];
+function frame(time) {
+  const voice = currentVoice();
+  if (!document.hidden) drawWave(time, voice);
+  renderSegments();
+  $('call').style.setProperty('--level', (inCall ? Math.min(1, micLevel() * 2.2) : 0).toFixed(3));
+  if (voice === 'agent') {
+    awaitingReply = false;
+    if (!wasTalking) $('s-speak').textContent = 'bot talking';
+  } else if (wasTalking) $('s-speak').textContent = callerSpeaking ? 'speaking' : 'quiet';
+  wasTalking = voice === 'agent';
+  for (const c of stageCells) {
+    const s = c.dataset.stage;
+    c.classList.toggle('on', (s === 'stt' && voice === 'caller') || (s === 'llm' && voice === 'thinking') ||
+                             (s === 'tts' && voice === 'agent'));
+  }
+  if (tStart !== null) {
+    const s = ((endedAt ?? performance.now()) - tStart) / 1000;
+    $('clock').textContent = $('c-clock').textContent = fmtClock(s);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ── Events from the edge ──────────────────────────────────────
+const secs = ms => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`);
 
 function onMessage(ev) {
-  if (typeof ev.data !== 'string') { playWav(ev.data); return; }   // binary = audio
+  if (typeof ev.data !== 'string') { playWav(ev.data); return; }   // binary = WAV from an older edge
   const m = JSON.parse(ev.data);
   if (m.audio_s != null) $('s-audio').textContent = m.audio_s.toFixed(1) + 's';
 
   switch (m.type) {
     case 'tenant':
-      document.title = m.name;
-      $('who').textContent = `${m.name} · ${m.locale} · ${m.voice}`;
-      $('who').hidden = false;
+      setTenantName(m.name);
+      $('c-meta').textContent = `${m.locale} · voice ${m.voice}`;
+      $('transcript').lang = m.locale;
       log(`tenant ${m.slug} — flows: ${m.flows.join(', ') || 'none'} | tools: ${m.tools.join(', ') || 'none'}`);
+      eventRow('ready', [m.flows.length ? `flows ${m.flows.join(', ')}` : 'open questions',
+                         m.tools.length ? `tools ${m.tools.join(', ')}` : ''].filter(Boolean).join(' · '), null, 'ok');
+      awaitingReply = true; showThinking('Picking up');
       break;
-    case 'flow':
+    case 'flow': {
+      $('v-llm').textContent = m.intent || m.kind || '—';
       $('s-flow').textContent = m.intent || (m.kind === 'open' ? 'open Q' : '—');
-      $('s-slots').textContent = Object.keys(m.slots || {}).length
-        ? Object.entries(m.slots).map(([k, v]) => `${k}=${v}`).join(' ') : '—';
+      const slots = Object.entries(m.slots || {});
+      $('s-slots').textContent = slots.length ? slots.map(([k, v]) => `${k}=${v}`).join(' ') : '—';
+      const key = JSON.stringify([m.kind, m.intent, m.slots]);
+      if (key !== lastFlow) {
+        lastFlow = key;
+        const text = [m.intent || (m.kind === 'open' ? 'open question' : m.kind),
+                      ...slots.map(([k, v]) => `${k} = ${v} ✓`)].join(' · ');
+        eventRow(m.intent ? 'intent' : m.kind || 'flow', text);
+      }
       break;
+    }
     case 'tool_result':
+      $('v-llm').textContent = m.tool;
       log(`TOOL ${m.tool} -> ${m.outcome}`);
       $('s-outcome').textContent = m.outcome;
+      eventRow('tool', `${m.tool} → ${m.outcome}`, tFinal !== null ? `${Math.round(performance.now() - tFinal)} ms` : null);
       break;
     case 'escalated':
       log('ESCALATED');
+      eventRow('transfer', 'handing over to a person', null, 'alert');
       break;
     case 'set_silence_ms':
       log(`endpointing -> ${m.value}ms (slot needs longer)`);
+      eventRow('endpoint', `waits ${m.value} ms of silence before answering`, null, 'faint');
       break;
     case 'ready':
       log(`STT ready — ${m.model} on ${m.device}, ${m.segment_length_s}s chunks`);
-      $('state').textContent = 'live'; $('state').className = 'live';
+      setState('live', 'live');
       break;
     case 'speech_start':
+      callerSpeaking = true;
       $('s-speak').textContent = 'speaking';
       $('s-speak-box').classList.add('speaking');
       log('speech_start');
       break;
     case 'partial':
-      if (firstAt === null) {
+      if (firstAt === null && tStart !== null) {
         firstAt = (performance.now() - tStart) / 1000;
         $('s-first').textContent = firstAt.toFixed(1) + 's';
       }
-      $('partial').textContent = m.text;
+      if (m.text && m.text.trim()) showPartial(m.text);
       break;
     case 'speech_end':
+      callerSpeaking = false;
+      tSpeechEnd = performance.now(); silenceMs = m.silence_ms || 0;
       $('s-speak').textContent = 'quiet';
       $('s-speak-box').classList.remove('speaking');
       log(`speech_end after ${m.silence_ms}ms silence`);
       break;
-    case 'final':
-      commitFinal(m.text);
+    case 'final': {
+      callerSpeaking = false;
       log(`FINAL: ${m.text}`);
-      replyEl = null;
-      break;
-    case 'token':
-      if (!replyEl) {
-        replyEl = document.createElement('div');
-        replyEl.className = 'reply';
-        const b = document.createElement('span');
-        b.className = 'utt-mark'; b.textContent = 'bot';
-        replyEl.append(b, document.createTextNode(''));
-        $('transcript').append(replyEl);
+      const text = (m.text || '').trim();
+      if (isNoise(text)) {
+        dropPartial();
+        if (text) eventRow('noise', `ignored ${text}`, null, 'faint');
+        break;
       }
-      replyEl.lastChild.textContent += m.text;
-      $('transcript').scrollTop = $('transcript').scrollHeight;
+      if (tSpeechEnd !== null && performance.now() - tSpeechEnd < 10000) {
+        $('v-stt').textContent = secs(silenceMs + performance.now() - tSpeechEnd);
+      }
+      tSpeechEnd = null;
+      commitFinal(text);
+      tFinal = performance.now();
+      reply = null; awaitingReply = true;
+      showThinking();
       break;
+    }
     case 'speaking':
+      if (m.text) announce(`Agent: ${m.text}`);
+      if (m.seconds != null) sayOnTrack(m.text, m.seconds);    // voice on the WebRTC track
+      else if (m.text) { replyRow(); pendingClauses.push(m.text); }   // the WAV that follows carries it
       break;
+    case 'token': {   // the oldest edges streamed LLM tokens instead of clauses
+      let s = segments[segments.length - 1];
+      if (!s || s.clock !== 'token') s = addSegment('', wallNow(), .01, 'token');
+      s.text += m.text; s.dur = Math.max(.25, s.text.length * .028);
+      break;
+    }
     case 'first_audio_s':
       $('s-reply').textContent = m.value.toFixed(2) + 's';
+      $('v-tts').textContent = `${m.value.toFixed(2)} s`;
       log(`first audio after ${m.value}s`);
       break;
     case 'turn_complete':
       log(`turn done — ${m.clauses} clause(s) in ${m.total_s}s`);
       break;
     case 'barge_in':
-      stopPlayback();
+      stopPlayback(); cutSegments(); pendingClauses = [];
       log('barge-in — stopped speaking');
+      eventRow('barge-in', 'you spoke over the agent: it stopped to listen', null, 'alert');
+      reply = null;
       break;
     case 'error':
       log(`STT error ${m.code}: ${m.detail}`, true);
-      $('state').textContent = 'stt error'; $('state').className = 'err';
+      setState('stt error', 'err');
+      eventRow('error', `${m.code}: ${m.detail || 'speech recognition failed'}`, null, 'alert');
       break;
     case 'closed':
-      log('stt stream closed');
+      log('call closed by the server');
+      // Let the last words play out, then hang up our side.
+      if (inCall) {
+        const wavLeft = playCtx ? Math.max(0, playHead - playCtx.currentTime) : 0;
+        const trackLeft = Math.max(0, speakUntil - wallNow());
+        clearTimeout(endTimer);
+        endTimer = setTimeout(() => stop('ended by the agent'), Math.min(Math.max(wavLeft, trackLeft) * 1000 + 400, 15000));
+      }
       break;
   }
 }
 
-// Client picker. /w/<slug> stays the source of truth: choosing a client navigates
-// there, so a direct link, a reload and the picker always agree.
+// ── Client picker ─────────────────────────────────────────────
+// /w/<slug> stays the source of truth: choosing a client navigates there, so a
+// direct link, a reload and the picker always agree.
 const SOURCE_LABEL = { test: 'Test tenants', platform: 'Platform clients' };
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -318,6 +911,8 @@ function showClient(t) {
   $('client-badge').textContent = t.source;
   $('client-badge').className = `badge ${t.source}`;
   $('client-docs').textContent = plural(t.documents, 'document');
+  setTenantName(t.display_name || t.slug);
+  if (!inCall) $('c-meta').textContent = t.locale || '';
 }
 
 async function loadClients() {
@@ -332,8 +927,7 @@ async function loadClients() {
   } catch (err) {
     sel.replaceChildren(new Option(TENANT_SLUG || 'No client list', TENANT_SLUG || ''));
     showClient(null);
-    const retry = document.createElement('button');
-    retry.textContent = 'Retry';
+    const retry = el('button', '', 'Retry');
     retry.addEventListener('click', loadClients);
     clientNote(`Couldn't load the client list (${err.message}). ` + (TENANT_SLUG
       ? `You can still call “${TENANT_SLUG}”.`
@@ -377,28 +971,49 @@ async function loadClients() {
   }
 }
 
-async function start() {
-  if (!TENANT_SLUG) return;   // the page makes the client choice explicit
-  inCall = true; syncPicker();
-  $('start').disabled = true;
-  $('state').textContent = 'starting'; $('state').className = '';
-  $('transcript').textContent = ''; $('partial').textContent = '';
+// ── Call lifecycle ────────────────────────────────────────────
+function resetCall() {
+  $('transcript').replaceChildren();
+  clearThinking();
+  callerRow = null; prevPartial = []; reply = null; pendingClauses = [];
+  segments = []; caret.remove(); awaitingReply = false; callerSpeaking = false; lastFlow = '';
+  tSpeechEnd = null; silenceMs = 0; tFinal = null; endedAt = null; speakUntil = 0;
   firstAt = null; utts = 0; words = 0;
-  $('s-utts').textContent = '0'; $('s-words').textContent = '0';
+  for (const [id, v] of [['s-utts', '0'], ['s-words', '0'], ['s-first', '—'], ['s-reply', '—'], ['s-flow', '—'],
+                         ['s-slots', '—'], ['s-outcome', '—'], ['s-speak', '—'], ['s-audio', '0.0s'],
+                         ['v-stt', '—'], ['v-llm', '—'], ['v-tts', '—']]) $(id).textContent = v;
+}
+
+async function start() {
+  if (!TENANT_SLUG || inCall) return;   // the page makes the client choice explicit
+  inCall = true; syncPicker();
+  setCallState('connecting');
+  setState('starting');
+  resetCall();
+  ensurePlayCtx();   // created inside the click, so the browser lets it play
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    levelMeter(stream);
+    // Asked for explicitly: the echo canceller removes the agent's voice (it arrives
+    // as a WebRTC track, its reference signal) from the mic, and noise suppression
+    // keeps room noise from becoming "speech" for the VAD.
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    listenToMic(stream);
     log(`mic: ${stream.getAudioTracks()[0].label}`);
 
     pc = new RTCPeerConnection();
-    pc.addEventListener('connectionstatechange', () => log(`connection: ${pc.connectionState}`));
+    pc.addEventListener('connectionstatechange', () => {
+      log(`connection: ${pc.connectionState}`);
+      if (pc.connectionState === 'failed' && inCall) stop('connection lost');
+    });
 
     chan = pc.createDataChannel('events');
     chan.binaryType = 'arraybuffer';
     chan.onopen = () => log('data channel open');
     chan.onmessage = onMessage;
 
-    pc.addTransceiver(stream.getAudioTracks()[0], { direction: 'sendonly', streams: [stream] });
+    // sendrecv: the mic goes up, the agent's voice comes back on the same line.
+    pc.addTransceiver(stream.getAudioTracks()[0], { direction: 'sendrecv', streams: [stream] });
+    pc.ontrack = attachVoiceTrack;
     await pc.setLocalDescription(await pc.createOffer());
     await waitForIce(pc);
 
@@ -407,33 +1022,51 @@ async function start() {
       body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type,
                              tenant: TENANT_SLUG }),
     });
-    if (!res.ok) throw new Error(res.statusText);
+    if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
     await pc.setRemoteDescription(await res.json());
     tStart = performance.now();
     log('streaming — speak now');
-    $('stop').disabled = false;
+    setCallState('live');
+    if (!$('state').classList.contains('live')) setState('connected', 'live');
   } catch (err) {
     log(`ERROR: ${err.message}`, true);
-    $('state').textContent = 'failed'; $('state').className = 'err';
-    $('start').disabled = !TENANT_SLUG;
+    const blocked = err.name === 'NotAllowedError';
+    setState(blocked ? 'mic blocked' : 'failed', 'err');
+    $('transcript').replaceChildren();
+    endLine(blocked ? 'Microphone access was refused' : `Couldn't connect · ${err.message}`, true);
+    releaseAudio();
+    if (pc) { pc.close(); pc = null; }
     inCall = false; syncPicker();
+    setCallState('failed');
   }
 }
 
-function stop() {
-  $('stop').disabled = true;
-  stopPlayback();
-  if (rafId) cancelAnimationFrame(rafId);
-  if (audioCtx) audioCtx.close();
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  setTimeout(() => pc && pc.close(), 1500);   // let the tail flush back
-  $('state').textContent = 'stopped'; $('state').className = '';
-  $('start').disabled = !TENANT_SLUG;
-  inCall = false; syncPicker();
+function releaseAudio() {
+  if (audioCtx) { audioCtx.close(); audioCtx = null; micAnalyser = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (remoteAudio) remoteAudio.srcObject = null;
+  voiceAnalyser = null;
 }
 
-$('start').addEventListener('click', start);
-$('stop').addEventListener('click', stop);
+function stop(reason) {
+  if (!inCall) return;
+  clearTimeout(endTimer);
+  setCallState('ending');
+  cutSegments(); stopPlayback(); pendingClauses = [];
+  releaseAudio();
+  const closing = pc;
+  setTimeout(() => closing && closing.close(), 1500);   // let the tail flush back
+  dropPartial(); clearThinking();
+  awaitingReply = false; callerSpeaking = false;
+  endedAt = performance.now();
+  const dur = tStart !== null ? fmtClock((endedAt - tStart) / 1000) : '00:00';
+  endLine(`Call ended · ${dur}${typeof reason === 'string' ? ' · ' + reason : ''}`);
+  setState('ended');
+  inCall = false; syncPicker();
+  setCallState('ended');
+}
+
+$('call').addEventListener('click', () => (inCall ? stop() : start()));
 // Keep the query string: /?autostart&stopafter=20 picks up again on /w/<slug>.
 $('client').addEventListener('change', e => {
   const slug = e.target.value;
@@ -445,13 +1078,20 @@ addEventListener('pageshow', e => { if (e.persisted) loadClients(); });
 
 // At / there is no client yet. The server still falls back to its default
 // tenant for API callers, but a person picks one explicitly.
-if (!TENANT_SLUG) { $('start').disabled = true; $('start').title = 'Choose a client first'; }
+if (TENANT_SLUG) {
+  setTenantName(TENANT_SLUG);
+} else {
+  $('h-lead').textContent = 'Pick a client';
+  $('h-name').textContent = 'to call';
+  $('call').title = 'Choose a client first';
+}
+setCallState('idle');
 loadClients();
 
 const qs = new URLSearchParams(location.search);
 if (TENANT_SLUG) {
   if (qs.has('autostart')) start();
-  if (qs.has('stopafter')) setTimeout(stop, parseFloat(qs.get('stopafter')) * 1000);
+  if (qs.has('stopafter')) setTimeout(() => stop(), parseFloat(qs.get('stopafter')) * 1000);
 } else if (qs.has('autostart')) {
   log('autostart waits for a client: choose one above');
 }
