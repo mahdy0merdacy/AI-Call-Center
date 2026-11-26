@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -78,22 +79,50 @@ def tenant_daily(calls: DataFrame, turns: DataFrame) -> DataFrame:
         _rate(F.col("slots_rejected"), F.col("slots_filled") + F.col("slots_rejected"))
         .alias("slot_rejection_rate"),
         "errors",
+        # Counts behind two of the rates, for the Insights page.
+        F.coalesce("barge_ins", F.lit(0)).cast("long").alias("barge_ins"),
+        F.coalesce("slots_rejected", F.lit(0)).cast("long").alias("slots_rejected"),
         F.current_timestamp().alias("computed_at"),
     )
 
 
-def run(spark: SparkSession, since: str | None) -> dict:
-    calls = spark.read.format("delta").load(CALLS)
-    turns = spark.read.format("delta").load(TURNS)
-    if since:
-        calls = calls.where(F.col("call_date") >= F.lit(since).cast("date"))
-    out = tenant_daily(calls, turns)
+def _columns(spark: SparkSession, path: str) -> set[str] | None:
+    """The table's columns, or None when there is no Delta table there yet."""
+    try:
+        return set(spark.read.format("delta").load(path).columns)
+    except Exception:       # noqa: BLE001 — not a Delta table yet
+        return None
 
-    writer = out.write.format("delta").mode("overwrite").partitionBy("call_date")
-    if since:
-        # Replace exactly the recomputed days, atomically; older days untouched.
-        writer = writer.option("replaceWhere", f"call_date >= '{since}'")
-    writer.save(GOLD)
+
+def write_days(spark: SparkSession, build: Callable[[str | None], DataFrame], path: str,
+               since: str | None, partition: str = "call_date") -> None:
+    """Write build(since) over the days >= since, atomically (Delta replaceWhere).
+
+    The whole table is rebuilt instead, from build(None), when there is no
+    `since`, when the table does not exist yet, or when its columns differ from
+    what the code produces now: a column added to a gold table then exists for
+    every day, not only for the days rebuilt since the change.
+    """
+    existing = _columns(spark, path)
+    out = build(since)
+    if since and existing is not None and existing == set(out.columns):
+        (out.write.format("delta").mode("overwrite").partitionBy(partition)
+         .option("replaceWhere", f"{partition} >= '{since}'").save(path))
+        return
+    (build(None).write.format("delta").mode("overwrite").partitionBy(partition)
+     .option("overwriteSchema", "true").save(path))
+
+
+def run(spark: SparkSession, since: str | None) -> dict:
+    def build(since: str | None) -> DataFrame:
+        calls = spark.read.format("delta").load(CALLS)
+        turns = spark.read.format("delta").load(TURNS)
+        if since:
+            calls = calls.where(F.col("call_date") >= F.lit(since).cast("date"))
+        return tenant_daily(calls, turns)
+
+    # Replace exactly the recomputed days, atomically; older days untouched.
+    write_days(spark, build, GOLD, since)
     return {"gold_rows": spark.read.format("delta").load(GOLD).count()}
 
 
