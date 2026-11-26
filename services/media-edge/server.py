@@ -171,6 +171,9 @@ class Call:
         self.ended = False
         self.voice = "Aria"
         self.locale = "en-US"
+        # Set once the orchestrator's Ready has told us the tenant's locale (or
+        # the call ended first). The STT config waits on it — see _stt_requests.
+        self.tenant_known = asyncio.Event()
         self.silence_ms = cfg.get("silence_ms", 900)
         self.t_final: float | None = None
         self.voice_track = AgentVoice()          # the agent's speech, to the browser
@@ -237,7 +240,24 @@ class Call:
 
     # -- STT --------------------------------------------------------------
 
+    # Upper bound on holding the STT config for the tenant's locale. Covers the
+    # orchestrator's start retries (0.5 s + 1.5 s) with room to spare; audio
+    # queues meanwhile (audio_q holds ~4 s), so nothing said early is lost.
+    TENANT_WAIT_S = 5.0
+
     async def _stt_requests(self):
+        # The STT language is fixed by this first message, and the locale comes
+        # from the orchestrator's Ready, which runs concurrently. Sent straight
+        # away it went out with the en-US default, so a French tenant (Maison
+        # Verte) was decoded with an English start-of-transcript sequence and
+        # Whisper translated the caller into English. Wait for the tenant first.
+        try:
+            await asyncio.wait_for(self.tenant_known.wait(), self.TENANT_WAIT_S)
+        except TimeoutError:
+            log.warning("no tenant locale after %.0fs — STT falls back to %s",
+                        self.TENANT_WAIT_S, self.locale)
+        if self.closed:
+            return
         yield stt_pb2.TranscribeRequest(config=stt_pb2.StreamConfig(
             session_id=self.cfg["session_id"],
             language=self.locale.split("-")[0],
@@ -363,6 +383,7 @@ class Call:
         if self.closed:
             return
         self.closed = True
+        self.tenant_known.set()                  # release an STT config still waiting
         try:
             self.audio_q.put_nowait(None)        # ends the STT stream
         except asyncio.QueueFull:
@@ -379,8 +400,9 @@ class Call:
 
         if kind == "ready":
             r = d.ready
-            self.locale, self.voice = r.locale, r.voice
+            self.locale, self.voice = r.locale or self.locale, r.voice
             self.silence_ms = r.endpointing.silence_ms or self.silence_ms
+            self.tenant_known.set()
             log.info("tenant %s (%s) voice=%s", r.display_name, r.locale, r.voice)
             self.send({"type": "tenant", "slug": r.tenant_id, "name": r.display_name,
                        "locale": r.locale, "voice": r.voice,
