@@ -41,6 +41,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "deploy" / "compose.yaml")]
+# --k8s: the same in-network steps through `kubectl exec` into the cluster's pods.
+K8S = {"on": False}
+ORCH_TARGET = {"compose": "orchestrator:50052",
+               "k8s": "orchestrator.aicc.svc.cluster.local:50052"}
 
 # Facts that exist nowhere but in the uploaded document, so an answer containing
 # them can only have come from retrieval.
@@ -105,7 +109,11 @@ def multipart(field: str, filename: str, content: bytes, ctype: str) -> tuple[by
 
 def compose_python(service: str, code: str, *args: str, timeout=120) -> subprocess.CompletedProcess:
     """Run a Python snippet INSIDE a compose service: its network, its DNS names."""
-    return subprocess.run([*COMPOSE, "exec", "-T", service, "python", "-", *args],
+    if K8S["on"]:
+        cmd = ["kubectl", "-n", "aicc", "exec", "-i", f"deploy/{service}", "--", "python", "-", *args]
+    else:
+        cmd = [*COMPOSE, "exec", "-T", service, "python", "-", *args]
+    return subprocess.run(cmd,
                           input=code, capture_output=True, text=True, timeout=timeout)
 
 
@@ -191,7 +199,8 @@ with urllib.request.urlopen(req, timeout=10) as r:
 
 
 def call(slug: str, question: str) -> dict:
-    p = compose_python("edge", CALL_SNIPPET, slug, question, "orchestrator:50052", timeout=120)
+    target = ORCH_TARGET["k8s" if K8S["on"] else "compose"]
+    p = compose_python("edge", CALL_SNIPPET, slug, question, target, timeout=120)
     if p.returncode != 0:
         return {"error": (p.stderr or p.stdout).strip()[-400:]}
     try:
@@ -246,12 +255,16 @@ def onboard(s: Step, args, company: str, email: str, password: str, tag: str = "
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--web", default="http://localhost:8080")
+    ap.add_argument("--k8s", action="store_true",
+                    help="test the k3s deployment (web on :30808; port-forward mailpit to :8025)")
+    ap.add_argument("--web", default=None, help="default :8080, or :30808 with --k8s")
     ap.add_argument("--edge", default="http://localhost:8082")
     ap.add_argument("--mailpit", default="http://localhost:8025")
     ap.add_argument("--ingest-timeout", type=float, default=600,
                     help="seconds to wait for the document to be ingested")
     args = ap.parse_args()
+    K8S["on"] = args.k8s
+    args.web = args.web or ("http://localhost:30808" if args.k8s else "http://localhost:8080")
 
     s = Step()
     run = uuid.uuid4().hex[:8]

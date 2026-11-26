@@ -42,6 +42,7 @@ from av import AudioFrame
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "deploy" / "compose.yaml")]
+K8S = {"on": False}            # --k8s: synthesise through `kubectl exec` into the edge pod
 RATE = 48000
 FRAME = 960                      # 20 ms at 48 kHz, what Opus wants
 
@@ -59,7 +60,7 @@ SYNTH = r'''
 import json, sys, urllib.request
 body = json.dumps({"model": "magpie", "input": sys.argv[1], "voice": "Jason",
                    "response_format": "wav", "sample_rate": 22050}).encode()
-req = urllib.request.Request("http://tts:8083/v1/audio/speech", data=body,
+req = urllib.request.Request(sys.argv[2] + "/v1/audio/speech", data=body,
                              headers={"Content-Type": "application/json"})
 with urllib.request.urlopen(req, timeout=60) as r:
     sys.stdout.buffer.write(r.read())
@@ -68,7 +69,12 @@ with urllib.request.urlopen(req, timeout=60) as r:
 
 def synthesize(text: str) -> np.ndarray:
     """Speech for `text` as 48 kHz mono int16, synthesised by the tts container."""
-    p = subprocess.run([*COMPOSE, "exec", "-T", "edge", "python", "-", text],
+    if K8S["on"]:
+        cmd = ["kubectl", "-n", "aicc", "exec", "-i", "deploy/edge", "--", "python", "-", text,
+               "http://tts.aicc.svc.cluster.local:8083"]
+    else:
+        cmd = [*COMPOSE, "exec", "-T", "edge", "python", "-", text, "http://tts:8083"]
+    p = subprocess.run(cmd,
                        input=SYNTH.encode(), capture_output=True, timeout=120)
     if p.returncode != 0:
         raise RuntimeError(f"TTS via edge failed: {p.stderr.decode()[-300:]}")
@@ -174,10 +180,9 @@ async def run(args) -> int:
             print(f"{stamp()}  STT final: {m.get('text')!r}")
         elif t == "speaking":
             speaking.append(m.get("text", ""))
-            # The WAV follows on the same channel; until it lands, assume ~15
-            # characters a second so a lost audio message cannot stall the script.
-            est = len(m.get("text", "")) / 15
-            agent_audio_until[0] = max(agent_audio_until[0], time.monotonic() + est)
+            # The voice plays on the media track; the edge says how long it is.
+            secs = m.get("seconds") or len(m.get("text", "")) / 15
+            agent_audio_until[0] = max(agent_audio_until[0], time.monotonic()) + secs
             new_speech.set()
             print(f"{stamp()}  agent says: {m.get('text')!r}")
         elif t == "tool_result":
@@ -186,6 +191,28 @@ async def run(args) -> int:
         elif t == "error":
             errors.append(f"{m.get('code')}: {m.get('detail')}")
             print(f"{stamp()}  ERROR {m.get('code')}: {m.get('detail')}")
+
+    # The agent's voice: a WebRTC audio track (what the browser's echo canceller
+    # needs). Count the seconds that are actually audible, not just frames.
+    @pc.on("track")
+    def on_track(track):
+        if track.kind != "audio":
+            return
+
+        async def listen():
+            voiced = 0.0
+            while True:
+                try:
+                    frame = await track.recv()
+                except Exception:
+                    return
+                pcm = frame.to_ndarray().astype(np.float32)
+                if np.sqrt((pcm ** 2).mean()) > 300:      # speech, not Opus comfort noise
+                    voiced += frame.samples / frame.sample_rate
+                    if not audio_secs or voiced - sum(audio_secs) >= 1.0:
+                        audio_secs.append(voiced - sum(audio_secs))
+
+        asyncio.ensure_future(listen())
 
     @pc.on("connectionstatechange")
     async def on_state():
@@ -250,7 +277,7 @@ async def run(args) -> int:
         ("greeting played", bool(speaking)),
         ("every utterance transcribed", len([f for f in finals if f]) >= len(script)),
         ("agent replied (text)", len(speaking) >= 1 + len(script)),
-        ("agent audio received over WebRTC", sum(audio_secs) > 1.0),
+        ("agent voice received on the media track (>1 s audible)", sum(audio_secs) > 1.0),
         ("no errors on the data channel", not errors),
     ]
     if expect_tool:
@@ -264,12 +291,15 @@ async def run(args) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--k8s", action="store_true", help="test the k3s deployment")
     ap.add_argument("--edge", default="http://localhost:8082")
     ap.add_argument("--tenant", default="swiftnet")
     ap.add_argument("--expect-tool", help="with --say: the tool the call must run")
     ap.add_argument("--say", action="append", help="an utterance (repeatable)")
     ap.add_argument("--turn-timeout", type=float, default=45)
-    return asyncio.run(run(ap.parse_args()))
+    args = ap.parse_args()
+    K8S["on"] = args.k8s
+    return asyncio.run(run(args))
 
 
 if __name__ == "__main__":

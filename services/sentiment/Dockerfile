@@ -10,7 +10,8 @@ ARG BASE=python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391b
 
 # ── deps: build the virtualenv once, copy it into a clean runtime ───────────────
 FROM ${BASE} AS deps
-ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 RUN python -m venv /opt/venv
 COPY requirements.txt /tmp/requirements.txt
 RUN /opt/venv/bin/pip install -r /tmp/requirements.txt
