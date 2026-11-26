@@ -1,0 +1,51 @@
+# Turns uploads into document_chunks: reads mongo and the media volume (here),
+# embeds through knowledge and writes postgres (both on the voice node).
+# Holds no model; until knowledge (layer 30) is up it just waits for it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+spec:
+  replicas: 1                   # one worker; claims are atomic, so more would be safe too
+  selector:
+    matchLabels: {app: ingestion}
+  template:
+    metadata:
+      labels: {app: ingestion}
+    spec:
+      nodeSelector: {aicc.io/role: platform}   # next to the media volume
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: aicc/ingestion
+          env:
+            - {name: MONGO_APP_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_USER}}}
+            - {name: MONGO_APP_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_PASSWORD}}}
+            - {name: MONGODB_URI, value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo:27017/documents?authSource=documents"}
+            - {name: MONGODB_DB, value: documents}
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_USER}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_PASSWORD}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: DATABASE_URL, value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
+            - {name: EMBEDDING_URL, value: "http://knowledge:8100"}
+            - {name: EMBEDDING_MODEL, value: BAAI/bge-m3}
+            - {name: POLL_INTERVAL_SECONDS, value: "5"}
+            - {name: STUCK_AFTER_MINUTES, value: "10"}
+          volumeMounts:
+            - {name: media, mountPath: /data/media, readOnly: true}
+          # No port, no probe: a crash restarts it, and that is all a liveness
+          # probe would add. SIGTERM is handled (finishes the current document).
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 768Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: media
+          persistentVolumeClaim: {claimName: media}

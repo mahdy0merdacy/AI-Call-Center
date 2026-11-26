@@ -1,0 +1,28 @@
+# Warm predator's image cache from the PUBLIC registries, over predator's own
+# internet, before our images are pulled from the registry on fedora (whose
+# upload is slow). containerd stores layers by digest: aicc/spark is
+# apache/spark + a few layers, so once apache/spark is here only those few
+# layers come from our registry.
+#   kubectl apply -f deploy/k3s/tools/prepull-predator.yaml
+#   kubectl -n aicc-data get pod prepull-predator -w     # Completed = all pulled
+#   kubectl -n aicc-data delete pod prepull-predator
+apiVersion: v1
+kind: Pod
+metadata:
+  name: prepull-predator
+  namespace: aicc-data
+spec:
+  nodeSelector: {aicc.io/role: llm}
+  restartPolicy: Never
+  # Init containers run one after the other: each pulls its image and exits.
+  initContainers:
+    - {name: spark-base, image: "apache/spark:4.2.0-python3", command: ["true"]}
+    - {name: airflow-base, image: "apache/airflow:3.2.0", command: ["true"]}
+    - {name: python-base, image: "python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2", command: ["true"]}
+    - {name: kafka, image: "apache/kafka:4.3.1", command: ["true"]}
+    - {name: schema-registry, image: "confluentinc/cp-schema-registry:8.2.0", command: ["true"]}
+    - {name: postgres, image: "postgres:18", command: ["true"]}
+    - {name: seaweedfs, image: "chrislusf/seaweedfs:4.00", command: ["true"]}
+    - {name: torch-train, image: "pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime", command: ["true"]}
+  containers:
+    - {name: done, image: "python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2", command: ["true"]}

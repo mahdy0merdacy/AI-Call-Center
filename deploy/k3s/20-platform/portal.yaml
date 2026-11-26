@@ -1,0 +1,88 @@
+# Auth service and JWT issuer (Django). Talks to postgres on the voice node.
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+spec:
+  selector: {app: portal}
+  ports:
+    - {name: http, port: 8000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: portal}
+  template:
+    metadata:
+      labels: {app: portal}
+    spec:
+      nodeSelector: {aicc.io/role: platform}
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001          # lets uid 10001 read the mounted JWT keys (mode 0440)
+      containers:
+        - name: portal
+          image: aicc/portal
+          command: ["entrypoint.sh", "gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000",
+                    "--workers", "2", "--timeout", "30", "--access-logfile", "-"]
+          envFrom:
+            - configMapRef: {name: platform-env}
+          env:
+            # The secret parts first: $(VAR) below can only use variables defined above it.
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_USER}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_PASSWORD}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: DATABASE_URL, value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
+            - {name: DJANGO_SECRET_KEY, valueFrom: {secretKeyRef: {name: aicc-core, key: PORTAL_SECRET_KEY}}}
+            - {name: MFA_ENCRYPTION_KEY, valueFrom: {secretKeyRef: {name: aicc-core, key: MFA_ENCRYPTION_KEY}}}
+            # Dev settings with DEBUG off: prod settings demand HTTPS (see deploy/README.md).
+            - {name: DJANGO_SETTINGS_MODULE, value: config.settings.dev}
+            - {name: DEBUG, value: "false"}
+            # One replica, so migrations at start are safe; with more, move them to a Job.
+            - {name: RUN_MIGRATIONS, value: "true"}
+            - {name: NUM_PROXIES, value: "1"}        # the web gateway's X-Forwarded-For
+            - {name: JWT_PRIVATE_KEY_PATH, value: /keys/jwt_private.pem}
+            - {name: JWT_PUBLIC_KEY_PATH, value: /keys/jwt_public.pem}
+            - {name: JWT_ISSUER, value: tenant-portal}
+            - {name: JWT_AUDIENCE, value: ai-voice-platform}
+            - {name: EMAIL_HOST, value: mailpit}
+            - {name: EMAIL_PORT, value: "1025"}
+            - {name: EMAIL_USE_TLS, value: "false"}
+            - {name: DEFAULT_FROM_EMAIL, value: "AI Voice <no-reply@aivoice.local>"}
+            - {name: LOG_LEVEL, value: INFO}
+          ports:
+            - {name: http, containerPort: 8000}
+          volumeMounts:
+            - {name: jwt-keys, mountPath: /keys, readOnly: true}
+          # The kubelet sends the pod IP as Host, which ALLOWED_HOSTS rejects.
+          readinessProbe:
+            httpGet:
+              path: /health/            # checks the database too
+              port: http
+              httpHeaders: [{name: Host, value: localhost}]
+            periodSeconds: 10
+            timeoutSeconds: 5           # postgres is a WAN hop away on this cluster
+          livenessProbe:
+            httpGet:
+              path: /health/live/       # the process only: a slow database must not restart it
+              port: http
+              httpHeaders: [{name: Host, value: localhost}]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 768Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: aicc-jwt-keys
+            defaultMode: 0440

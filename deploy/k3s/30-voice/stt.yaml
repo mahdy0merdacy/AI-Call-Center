@@ -1,0 +1,64 @@
+# Simul-Whisper on the GPU. The image is imported into fedora's k3s directly
+# (9.9 GB: never sent through the registry), hence pullPolicy Never.
+apiVersion: v1
+kind: Service
+metadata:
+  name: stt
+spec:
+  selector: {app: stt}
+  ports:
+    - {name: grpc, port: 50051}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stt
+spec:
+  replicas: 1
+  # One GPU node: a rolling update's extra pod could never fit next to the old
+  # one, so the rollout would hang. Recreate = stop, then start.
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: stt}
+  template:
+    metadata:
+      labels: {app: stt}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      # The nvidia runtime injects the GPU. STT and TTS share fedora's one GPU:
+      # neither requests nvidia.com/gpu (the device plugin would give it to only
+      # one); both ask the runtime for all devices instead. See FINDINGS.md.
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: stt
+          image: aicc/stt:dev
+          imagePullPolicy: Never
+          env:
+            - {name: NVIDIA_VISIBLE_DEVICES, value: all}
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility"}
+          ports:
+            - {name: grpc, containerPort: 50051}
+          volumeMounts:
+            - {name: whisper, mountPath: /models/whisper, readOnly: true}
+          # SERVING only after the model is loaded and warmed up.
+          startupProbe:
+            grpc: {port: 50051}
+            periodSeconds: 5
+            failureThreshold: 36       # up to 3 min
+          readinessProbe:
+            grpc: {port: 50051}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 6Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: whisper
+          hostPath: {path: /home/mahdousha/.cache/whisper, type: Directory}

@@ -1,0 +1,84 @@
+# The tool servers (MCP over streamable HTTP at /mcp). Same image, two scripts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-acme
+spec:
+  selector: {app: mcp-acme}
+  ports:
+    - {name: mcp, port: 9101}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-acme
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mcp-acme}
+  template:
+    metadata:
+      labels: {app: mcp-acme}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: mcp
+          image: aicc/mcp-servers
+          args: ["acme_delivery.py", "--host", "0.0.0.0", "--port", "9101"]
+          ports:
+            - {name: mcp, containerPort: 9101}
+          readinessProbe:
+            tcpSocket: {port: mcp}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: mcp}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 10m, memory: 48Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-swiftnet
+spec:
+  selector: {app: mcp-swiftnet}
+  ports:
+    - {name: mcp, port: 9102}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-swiftnet
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mcp-swiftnet}
+  template:
+    metadata:
+      labels: {app: mcp-swiftnet}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: mcp
+          image: aicc/mcp-servers
+          args: ["swiftnet_isp.py", "--host", "0.0.0.0", "--port", "9102"]
+          ports:
+            - {name: mcp, containerPort: 9102}
+          readinessProbe:
+            tcpSocket: {port: mcp}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: mcp}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 10m, memory: 48Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}

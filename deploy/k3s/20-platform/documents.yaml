@@ -1,0 +1,90 @@
+# Tenant documents (Django + MongoDB). Writes uploads to the `media` volume,
+# which the ingestion worker reads: both run on the platform node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+spec:
+  # ReadWriteOnce = one NODE, not one pod: documents and ingestion share it
+  # because nodeSelector puts both on the platform node.
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: {storage: 5Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: documents
+spec:
+  selector: {app: documents}
+  ports:
+    - {name: http, port: 8000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: documents
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: documents}
+  template:
+    metadata:
+      labels: {app: documents}
+    spec:
+      nodeSelector: {aicc.io/role: platform}
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001          # owns the media volume
+      containers:
+        - name: documents
+          image: aicc/documents
+          command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000",
+                    "--workers", "2", "--timeout", "30", "--access-logfile", "-"]
+          env:
+            - {name: MONGO_APP_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_USER}}}
+            - {name: MONGO_APP_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_PASSWORD}}}
+            - {name: MONGODB_URI, value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo:27017/documents?authSource=documents"}
+            - {name: MONGODB_DB, value: documents}
+            - {name: DJANGO_SECRET_KEY, valueFrom: {secretKeyRef: {name: aicc-core, key: DOCUMENTS_SECRET_KEY}}}
+            - {name: DJANGO_DEBUG, value: "false"}
+            - name: DJANGO_ALLOWED_HOSTS
+              valueFrom: {configMapKeyRef: {name: platform-env, key: DJANGO_ALLOWED_HOSTS}}
+            - name: SESSION_LINK_BASE_URL
+              valueFrom: {configMapKeyRef: {name: platform-env, key: SESSION_LINK_BASE_URL}}
+            - {name: MAX_UPLOAD_SIZE_MB, value: "25"}
+            # Verifies the portal's JWTs with the public key only.
+            - {name: JWT_PUBLIC_KEY, valueFrom: {secretKeyRef: {name: aicc-core, key: JWT_PUBLIC_KEY}}}
+            - {name: JWT_ISSUER, value: tenant-portal}
+            - {name: JWT_AUDIENCE, value: ai-voice-platform}
+            - {name: JWT_TENANT_CLAIM, value: tenant_id}
+            - {name: JWT_ALLOWED_ROLES, value: tenant_admin}
+          ports:
+            - {name: http, containerPort: 8000}
+          volumeMounts:
+            - {name: media, mountPath: /data/media}
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders: [{name: Host, value: localhost}]
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders: [{name: Host, value: localhost}]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 192Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: media
+          persistentVolumeClaim: {claimName: media}

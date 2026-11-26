@@ -1,0 +1,70 @@
+# Holds the ONE bge-m3 in RAM: embeds for ingestion, searches for calls.
+# Next to postgres, because every call turn runs one search.
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge
+spec:
+  selector: {app: knowledge}
+  ports:
+    - {name: http, port: 8100}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: knowledge}
+  template:
+    metadata:
+      labels: {app: knowledge}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+      containers:
+        - name: knowledge
+          image: aicc/ingestion
+          command: ["python", "-m", "ingestion.api"]
+          env:
+            - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: VOICE_READER_PASSWORD}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
+            - {name: EMBEDDING_MODEL, value: BAAI/bge-m3}
+            - {name: EMBEDDING_THREADS, value: "2"}
+            - {name: PORT, value: "8100"}
+            - {name: HF_HOME, value: /models/huggingface}
+            - {name: HF_HUB_OFFLINE, value: "1"}     # the model is on the node; never download
+          ports:
+            - {name: http, containerPort: 8100}
+          volumeMounts:
+            - {name: hf-cache, mountPath: /models/huggingface, readOnly: true}
+          # Liveness on /livez (the process), readiness on /healthz (model loaded AND
+          # postgres answers). Swapped, a postgres hiccup would restart the pod and
+          # reload 2.3 GB for nothing.
+          startupProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 4
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 3584Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        # The host's cache (filled once with snapshot_download). On a multi-node
+        # cluster this becomes a PVC filled by an init container.
+        - name: hf-cache
+          hostPath: {path: /home/mahdousha/.cache/huggingface, type: Directory}

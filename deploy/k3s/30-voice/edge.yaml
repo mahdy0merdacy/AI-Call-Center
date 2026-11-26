@@ -1,0 +1,48 @@
+# WebRTC in, gRPC/HTTP out. On the HOST network: the browser's audio arrives by
+# UDP on ports aiortc picks per call, and only the node's real addresses can
+# carry it (a pod IP is not reachable from a browser). The page is then at
+# http://localhost:8082 on fedora: a secure origin, so the mic is allowed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge
+spec:
+  replicas: 1
+  strategy: {type: Recreate}      # port 8082 on the host: two pods can never coexist
+  selector:
+    matchLabels: {app: edge}
+  template:
+    metadata:
+      labels: {app: edge}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      hostNetwork: true
+      # With the host network, DNS would be the HOST's (no Service names).
+      # ClusterFirstWithHostNet keeps cluster DNS for this pod.
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: edge
+          image: aicc/media-edge
+          args: ["--host", "0.0.0.0", "--port", "8082"]
+          env:
+            # Full names: gRPC's resolver does not always apply search domains.
+            - {name: STT_ADDR, value: "stt.aicc.svc.cluster.local:50051"}
+            - {name: ORCHESTRATOR_ADDR, value: "orchestrator.aicc.svc.cluster.local:50052"}
+            - {name: TTS_URL, value: "http://tts.aicc.svc.cluster.local:8083"}
+            - {name: DEFAULT_TENANT, value: acme}
+          ports:
+            - {name: http, containerPort: 8082}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8082}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8082}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 200m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}

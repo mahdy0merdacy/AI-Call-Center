@@ -1,0 +1,70 @@
+# Dialogue engine: text in, directives out. Test tenants from the ConfigMaps,
+# platform tenants from postgres (voice_reader), documents through knowledge.
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+spec:
+  selector: {app: orchestrator}
+  ports:
+    - {name: grpc, port: 50052}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orchestrator}
+  template:
+    metadata:
+      labels: {app: orchestrator}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      # > SHUTDOWN_GRACE_S: on a rollout, live calls drain before SIGKILL.
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: orchestrator
+          image: aicc/orchestrator
+          envFrom:
+            - secretRef: {name: aicc-llm}           # GROQ_API_KEY (later: LLM_URL to predator)
+          env:
+            - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: VOICE_READER_PASSWORD}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: PLATFORM_DATABASE_URL, value: "postgresql://voice_reader:$(VOICE_READER_PASSWORD)@postgres:5432/$(POSTGRES_DB)"}
+            - {name: KNOWLEDGE_URL, value: "http://knowledge:8100"}
+            - name: MCP_SERVERS
+              value: lookup_shipment=http://mcp-acme:9101/mcp,reschedule_delivery=http://mcp-acme:9101/mcp,check_line_status=http://mcp-swiftnet:9102/mcp
+            - {name: TENANTS_DIR, value: /srv/aicc/tenants}
+            - {name: SHUTDOWN_GRACE_S, value: "25"}
+            # Call events to the data stack on predator (namespace aicc-data).
+            # Publishing never blocks a call: if Kafka is away, events are dropped
+            # and counted, and the call goes on.
+            - {name: KAFKA_BOOTSTRAP, value: "kafka-1.aicc-data.svc.cluster.local:19092"}
+            - {name: SCHEMA_REGISTRY_URL, value: "http://schema-registry.aicc-data.svc.cluster.local:8081"}
+          ports:
+            - {name: grpc, containerPort: 50052}
+          volumeMounts:
+            - {name: tenants, mountPath: /srv/aicc/tenants, readOnly: true}
+            - {name: tenant-knowledge, mountPath: /srv/aicc/tenants/fixtures/knowledge, readOnly: true}
+          # Readiness = gRPC health, which turns NOT_SERVING the moment a drain
+          # starts, so the Service stops sending new calls. Liveness = the port only.
+          readinessProbe:
+            grpc: {port: 50052}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: tenants
+          configMap: {name: tenants}
+        - name: tenant-knowledge
+          configMap: {name: tenant-knowledge}

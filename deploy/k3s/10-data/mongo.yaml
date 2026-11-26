@@ -1,0 +1,63 @@
+# MongoDB for the documents service. On the platform node, next to its only
+# two clients (documents, ingestion).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+spec:
+  clusterIP: None
+  selector: {app: mongo}
+  ports:
+    - {name: mongo, port: 27017}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+spec:
+  serviceName: mongo
+  replicas: 1
+  selector:
+    matchLabels: {app: mongo}
+  template:
+    metadata:
+      labels: {app: mongo}
+    spec:
+      nodeSelector: {aicc.io/role: platform}
+      securityContext:
+        runAsUser: 999          # mongodb, the image's USER, as a number
+        runAsGroup: 999
+        fsGroup: 999
+        runAsNonRoot: true
+      containers:
+        - name: mongo
+          image: aicc/mongo     # mongo:7 + init.js (creates the documents database)
+          env:
+            - {name: MONGO_INITDB_ROOT_USERNAME, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_ROOT_USER}}}
+            - {name: MONGO_INITDB_ROOT_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_ROOT_PASSWORD}}}
+            - {name: MONGODB_DB, value: documents}
+          ports:
+            - {name: mongo, containerPort: 27017}
+          volumeMounts:
+            - {name: data, mountPath: /data/db}
+          # Through the pod's hostname: during init, mongod listens on localhost only.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mongosh --quiet --host \"$(hostname)\" --eval \"db.adminCommand('ping').ok\""]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: mongo}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 768Mi}   # WiredTiger sizes its cache from this
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests: {storage: 5Gi}

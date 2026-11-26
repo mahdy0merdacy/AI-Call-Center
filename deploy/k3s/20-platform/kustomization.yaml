@@ -1,0 +1,20 @@
+# Layer 20: the tenant platform, all on the platform node (Imen's laptop).
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/20-platform | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-core}
+
+resources:
+  - config.yaml
+  - portal.yaml
+  - documents.yaml
+  - web.yaml
+  - ingestion.yaml
+
+images:
+  - {name: aicc/portal, newName: 100.72.101.66:5001/aicc/portal, newTag: 00e23cc}
+  - {name: aicc/documents, newName: 100.72.101.66:5001/aicc/documents, newTag: 00e23cc}
+  - {name: aicc/web, newName: 100.72.101.66:5001/aicc/web, newTag: web-11261021}
+  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: 00e23cc}

@@ -1,0 +1,63 @@
+# Spark Connect server (local mode, 4 cores): Airflow's tasks send it plans over
+# gRPC on 15002; it reads Kafka, writes Delta to SeaweedFS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark
+spec:
+  selector: {app: spark}
+  ports:
+    - {name: connect, port: 15002}
+    - {name: ui, port: 4040}
+---
+# Streaming checkpoints (bronze's Kafka offsets) must survive restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spark-work
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: {requests: {storage: 5Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark
+spec:
+  replicas: 1
+  strategy: {type: Recreate}      # one writer per checkpoint: never two servers
+  selector:
+    matchLabels: {app: spark}
+  template:
+    metadata:
+      labels: {app: spark}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      securityContext: {fsGroup: 185}        # the image's spark user
+      containers:
+        - name: spark
+          image: aicc/spark
+          env:
+            - {name: SPARK_NO_DAEMONIZE, value: "1"}
+            - {name: S3_ACCESS_KEY, valueFrom: {secretKeyRef: {name: data-env, key: S3_ACCESS_KEY}}}
+            - {name: S3_SECRET_KEY, valueFrom: {secretKeyRef: {name: data-env, key: S3_SECRET_KEY}}}
+          ports:
+            - {name: connect, containerPort: 15002}
+            - {name: ui, containerPort: 4040}
+          volumeMounts:
+            - {name: work, mountPath: /opt/spark/work-dir}
+          readinessProbe:
+            tcpSocket: {port: connect}
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket: {port: connect}
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          resources:
+            requests: {cpu: "1", memory: 1536Mi}
+            limits: {memory: 2Gi}
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: spark-work}

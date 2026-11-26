@@ -1,0 +1,105 @@
+# Airflow standalone (scheduler + API server + LocalExecutor in one pod): runs
+# the lake_pipeline DAG every 15 minutes. UI: http://<any node IP>:30895
+# Code is mounted from ConfigMaps built from the repo (see kustomization.yaml),
+# where compose bind-mounted the same folders.
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow
+spec:
+  type: NodePort
+  selector: {app: airflow}
+  ports:
+    - {name: http, port: 8080, nodePort: 30895}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quality-docs
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: airflow}
+  template:
+    metadata:
+      labels: {app: airflow}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      securityContext: {fsGroup: 0}          # airflow's image: uid 50000, group 0
+      containers:
+        - name: airflow
+          image: aicc/airflow
+          args: ["standalone"]
+          env:
+            - {name: AIRFLOW_DB_PASSWORD, valueFrom: {secretKeyRef: {name: data-env, key: AIRFLOW_DB_PASSWORD}}}
+            - {name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN, value: "postgresql+psycopg2://airflow:$(AIRFLOW_DB_PASSWORD)@postgres:5432/airflow"}
+            - {name: AIRFLOW__CORE__EXECUTOR, value: LocalExecutor}
+            - {name: AIRFLOW__CORE__LOAD_EXAMPLES, value: "False"}
+            - {name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION, value: "True"}
+            - {name: AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS, value: "True"}
+            - {name: SPARK_REMOTE, value: "sc://spark:15002"}
+            - {name: KAFKA_BOOTSTRAP, value: "kafka-1:19092"}
+            - {name: PII_PEPPER, valueFrom: {secretKeyRef: {name: data-env, key: PII_PEPPER}}}
+            - {name: PYTHONPATH, value: /opt/aicc}
+            - {name: S3_ENDPOINT, value: "http://seaweedfs:8333"}
+            - {name: S3_ACCESS_KEY, valueFrom: {secretKeyRef: {name: data-env, key: S3_ACCESS_KEY}}}
+            - {name: S3_SECRET_KEY, valueFrom: {secretKeyRef: {name: data-env, key: S3_SECRET_KEY}}}
+            - {name: AICC_GEN, value: /opt/aicc/gen}
+            - {name: TENANTS_DIR, value: /opt/aicc/tenants}
+            - {name: QUALITY_HOME, value: /opt/airflow/quality}
+          ports:
+            - {name: http, containerPort: 8080}
+          volumeMounts:
+            # subPath: a plain file. A whole ConfigMap volume has a `..data`
+            # symlink to a hidden folder, and Airflow's DAG scan follows it into a
+            # "recursive loop" error. (subPath files do not live-update; editing the
+            # DAG changes the ConfigMap's hashed name, which rolls Airflow anyway.)
+            - {name: dags, mountPath: /opt/airflow/dags/lake_pipeline.py, subPath: lake_pipeline.py, readOnly: true}
+            - {name: jobs, mountPath: /opt/aicc/jobs, readOnly: true}
+            - {name: gen, mountPath: /opt/aicc/gen, readOnly: true}
+            - {name: quality, mountPath: /opt/aicc/quality, readOnly: true}
+            - {name: tenants, mountPath: /opt/aicc/tenants, readOnly: true}
+            - {name: logs, mountPath: /opt/airflow/logs}
+            - {name: quality-docs, mountPath: /opt/airflow/quality}
+          readinessProbe:
+            httpGet: {path: /api/v2/monitor/health, port: http}
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 20
+          livenessProbe:
+            tcpSocket: {port: http}
+            initialDelaySeconds: 180
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 2Gi}
+      volumes:
+        - name: dags
+          configMap: {name: airflow-dags}
+        - name: jobs
+          configMap: {name: spark-jobs}
+        # A ConfigMap is flat; `items` rebuilds the folder layout the code expects.
+        - name: gen
+          configMap:
+            name: event-schema
+            items:
+              - {key: events.desc, path: events.desc}
+              - {key: events_pb2.py, path: aicallcenter/events/v1/events_pb2.py}
+        - name: quality
+          configMap: {name: quality-code}
+        - name: tenants
+          configMap: {name: tenants}
+        - name: logs
+          emptyDir: {}
+        - name: quality-docs
+          persistentVolumeClaim: {claimName: quality-docs}

@@ -1,0 +1,55 @@
+# Fine-tunes xlm-roberta-base on synthetic calls (scripts/synth_data.py, then
+# scripts/train.py, unchanged), on predator's GPU. ~10-20 min on first run:
+# pip installs the training libraries and downloads the base model (~1.1 GB,
+# cached on the volume for the next run). Re-train: delete the Job, apply again.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sentiment-train
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector: {aicc.io/role: llm}
+      runtimeClassName: nvidia
+      containers:
+        - name: train
+          # predator's RTX 5070 is Blackwell (sm_120): PyTorch >= 2.7 built for
+          # CUDA >= 12.8. With 2.6/cu124 the GPU is visible but has no kernels.
+          image: pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
+          workingDir: /work
+          command:
+            - bash
+            - -ec
+            - |
+              # Same transformers as the worker image, so the saved model loads there.
+              pip install --quiet --no-cache-dir "transformers==5.23.0" "datasets>=2.20" \
+                "accelerate>=0.33" "scikit-learn>=1.5"
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+              python scripts/synth_data.py --calls 3000 --out /models/_data/synthetic
+              python scripts/train.py --data /models/_data/synthetic --out /models
+              # The trainer saves the weights as 0600 root: the worker (uid 10001)
+              # could not read them ("No such file" from safetensors).
+              chmod -R a+rX /models
+              ls -d /models/*/model
+          env:
+            - {name: HF_HOME, value: /models/_hf}          # base model cached on the volume
+            # The scripts find app/ via Path(__file__).resolve(), but ConfigMap files
+            # are symlinks into a hidden ..<timestamp> folder: resolve() lands there.
+            - {name: PYTHONPATH, value: /work}
+            - {name: PIP_DEFAULT_TIMEOUT, value: "120"}
+          resources:
+            limits: {nvidia.com/gpu: 1, memory: 8Gi}       # the device plugin hands it predator's GPU
+            requests: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: scripts, mountPath: /work/scripts}
+            - {name: app, mountPath: /work/app}
+      volumes:
+        - name: models
+          persistentVolumeClaim: {claimName: sentiment-models}
+        - name: scripts
+          configMap: {name: sentiment-train-scripts}
+        - name: app
+          configMap: {name: sentiment-train-app}

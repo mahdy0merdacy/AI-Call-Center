@@ -1,0 +1,43 @@
+# The sentiment worker: reads calls.events.v1, classifies every caller
+# utterance, writes EmotionClassified / CallEmotionSummarized to
+# calls.sentiment.v1. At-least-once (commits after delivery), deduplicated.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentiment
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: sentiment}
+  template:
+    metadata:
+      labels: {app: sentiment}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
+      # Wait for a trained model instead of crash-looping until the Job is done.
+      initContainers:
+        - name: wait-for-model
+          image: aicc/sentiment
+          command: ["sh", "-c", "until ls -d /srv/sentiment/models/*/model/config.json >/dev/null 2>&1; do echo 'waiting for sentiment-train...'; sleep 15; done"]
+          volumeMounts:
+            - {name: models, mountPath: /srv/sentiment/models, readOnly: true}
+      containers:
+        - name: worker
+          image: aicc/sentiment
+          command: ["python", "-m", "app.consumer"]
+          env:
+            - {name: KAFKA_BOOTSTRAP, value: "kafka-1:19092"}
+            - {name: SCHEMA_REGISTRY, value: "http://schema-registry:8081"}
+            # Empty = the newest models/<version>/model under the working dir,
+            # i.e. the volume below. (The image defaults it to /models/current.)
+            - {name: MODEL_DIR, value: ""}
+            - {name: GROUP_ID, value: sentiment-v1}
+          volumeMounts:
+            - {name: models, mountPath: /srv/sentiment/models, readOnly: true}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 2Gi}
+      volumes:
+        - name: models
+          persistentVolumeClaim: {claimName: sentiment-models}

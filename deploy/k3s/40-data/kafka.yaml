@@ -1,0 +1,157 @@
+# Kafka (KRaft, one broker that is also its own controller) + Schema Registry
+# + Kafka UI. The orchestrator (namespace aicc, on fedora) publishes here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-1                 # the compose name: every client config still works
+spec:
+  selector: {app: kafka}
+  ports:
+    - {name: internal, port: 19092}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+spec:
+  serviceName: kafka-1
+  replicas: 1
+  selector:
+    matchLabels: {app: kafka}
+  template:
+    metadata:
+      labels: {app: kafka}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      securityContext: {fsGroup: 1000}       # the image's appuser
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.1
+          env:
+            - {name: KAFKA_NODE_ID, value: "1"}
+            - {name: KAFKA_PROCESS_ROLES, value: "broker,controller"}
+            - {name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@localhost:9093"}
+            - {name: KAFKA_CONTROLLER_LISTENER_NAMES, value: CONTROLLER}
+            - {name: CLUSTER_ID, value: _aRmI49BRuC5KRAKE9mlBQ}
+            - {name: KAFKA_LISTENERS, value: "INTERNAL://:19092,CONTROLLER://:9093"}
+            # What the broker tells clients to connect to. A name every pod can
+            # resolve, from this namespace AND from aicc (the orchestrator).
+            # compose said localhost:9092 for host tools; here nothing is on a host.
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: "INTERNAL://kafka-1.aicc-data.svc.cluster.local:19092"}
+            - {name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"}
+            - {name: KAFKA_INTER_BROKER_LISTENER_NAME, value: INTERNAL}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1"}
+            - {name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0"}
+            - {name: KAFKA_LOG_DIRS, value: /var/lib/kafka/data}
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms384m -Xmx384m"}
+          ports:
+            - {name: internal, containerPort: 19092}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/kafka/data}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:19092 >/dev/null 2>&1"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+          livenessProbe:
+            tcpSocket: {port: internal}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {memory: 768Mi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: {requests: {storage: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry
+spec:
+  selector: {app: schema-registry}
+  ports:
+    - {name: http, port: 8081}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: schema-registry}
+  template:
+    metadata:
+      labels: {app: schema-registry}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      enableServiceLinks: false   # else k8s injects SCHEMA_REGISTRY_PORT=tcp://..., which this image misreads as config
+      containers:
+        - name: schema-registry
+          image: confluentinc/cp-schema-registry:8.2.0
+          env:
+            - {name: SCHEMA_REGISTRY_HOST_NAME, value: schema-registry}
+            - {name: SCHEMA_REGISTRY_LISTENERS, value: "http://0.0.0.0:8081"}
+            - {name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS, value: "PLAINTEXT://kafka-1:19092"}
+            - {name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL, value: full_transitive}
+            - {name: SCHEMA_REGISTRY_HEAP_OPTS, value: "-Xms256m -Xmx256m"}
+          ports:
+            - {name: http, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /subjects, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: http}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 384Mi}
+            limits: {memory: 512Mi}
+---
+# Topics, consumer lag and the decoded events, in a browser:
+#   http://<any node IP>:30890   (or kubectl -n aicc-data port-forward svc/kafka-ui 8090:8080)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+spec:
+  type: NodePort
+  selector: {app: kafka-ui}
+  ports:
+    - {name: http, port: 8080, nodePort: 30890}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kafka-ui}
+  template:
+    metadata:
+      labels: {app: kafka-ui}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      containers:
+        - name: kafka-ui
+          image: ghcr.io/kafbat/kafka-ui:latest
+          env:
+            - {name: KAFKA_CLUSTERS_0_NAME, value: aicc}
+            - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka-1:19092"}
+            - {name: KAFKA_CLUSTERS_0_SCHEMAREGISTRY, value: "http://schema-registry:8081"}
+            - {name: DYNAMIC_CONFIG_ENABLED, value: "false"}
+            - {name: JAVA_OPTS, value: "-Xms128m -Xmx256m"}
+          ports:
+            - {name: http, containerPort: 8080}
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {memory: 512Mi}

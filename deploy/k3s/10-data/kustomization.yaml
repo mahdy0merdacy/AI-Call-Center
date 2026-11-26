@@ -1,0 +1,33 @@
+# Layer 10: the databases, mail catcher, and the two setup Jobs.
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/10-data | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-core}
+
+resources:
+  - postgres.yaml
+  - mongo.yaml
+  - mailpit.yaml
+  - jobs.yaml
+
+# The scripts the Jobs run, taken from where they already live in the repo.
+# disableNameSuffixHash: the Jobs mount these by name.
+configMapGenerator:
+  - name: db-grants
+    files: [grants.sql=../../postgres/grants.sql]
+    options: {disableNameSuffixHash: true}
+  - name: mongo-setup
+    files: [mongo-setup.js=../../../services/documents/docker/mongo-setup.js]
+    options: {disableNameSuffixHash: true}
+
+# One place for where images come from. Phase 2 (registry) sets the tag to the
+# git commit: kustomize edit set image aicc/postgres=100.72.101.66:5001/aicc/postgres:<sha>
+images:
+  - name: aicc/postgres
+    newName: 100.72.101.66:5001/aicc/postgres
+    newTag: 00e23cc
+  - name: aicc/mongo
+    newName: 100.72.101.66:5001/aicc/mongo
+    newTag: 00e23cc

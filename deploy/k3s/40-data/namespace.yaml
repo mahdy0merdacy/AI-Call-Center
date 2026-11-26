@@ -1,0 +1,7 @@
+# The data stack lives apart from the core stack: its names (kafka-1, postgres,
+# seaweedfs, spark) stay exactly those of data/docker-compose.yml, and
+# `kubectl delete ns aicc-data` removes it without touching the calls path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aicc-data

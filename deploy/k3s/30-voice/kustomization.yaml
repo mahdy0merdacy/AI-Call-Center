@@ -1,0 +1,42 @@
+# Layer 30: the voice path, all on the voice node (fedora, the GPU).
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/30-voice | kubectl apply -f -
+# Stop the compose stack first: the edge takes port 8082 on the host, and STT/TTS
+# need the GPU memory compose's copies hold.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-core}
+
+resources:
+  - knowledge.yaml
+  - mcp.yaml
+  - orchestrator.yaml
+  - stt.yaml
+  - tts.yaml
+  - edge.yaml
+
+# The test tenants, from tenants/ itself. A ConfigMap key cannot contain "/", so
+# the knowledge files the YAML points at (fixtures/knowledge/...) are a second
+# one, mounted at that subfolder. The name gets a hash of the content: editing a
+# tenant changes the name, which changes the orchestrator's pod template, which
+# rolls it out with the new config. No manual restart.
+configMapGenerator:
+  - name: tenants
+    files:
+      - ../../../tenants/acme-delivery.yaml
+      - ../../../tenants/swiftnet-isp.yaml
+      - ../../../tenants/maison-verte.yaml
+  - name: tenant-knowledge
+    files:
+      - ../../../tenants/fixtures/knowledge/maison-verte-infos.md
+      - ../../../tenants/fixtures/knowledge/maison-verte-produits.md
+      - ../../../tenants/fixtures/knowledge/swiftnet-faq.md
+
+images:
+  - {name: aicc/orchestrator, newName: 100.72.101.66:5001/aicc/orchestrator, newTag: 8b85f4f}
+  - {name: aicc/media-edge, newName: 100.72.101.66:5001/aicc/media-edge, newTag: edge-11261044}
+  - {name: aicc/mcp-servers, newName: 100.72.101.66:5001/aicc/mcp-servers, newTag: 00e23cc}
+  - {name: aicc/ingestion, newName: 100.72.101.66:5001/aicc/ingestion, newTag: 00e23cc}
+  # stt and tts are not in the registry: imported straight into fedora's k3s
+  # (docker save ... | sudo k3s ctr images import -) and used with pullPolicy Never.

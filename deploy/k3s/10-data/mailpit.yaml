@@ -1,0 +1,37 @@
+# Catches the portal's emails (verification links). Dev only: a real SMTP relay
+# replaces it in production. UI: kubectl -n aicc port-forward svc/mailpit 8025
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+spec:
+  selector: {app: mailpit}
+  ports:
+    - {name: smtp, port: 1025}
+    - {name: ui, port: 8025}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mailpit}
+  template:
+    metadata:
+      labels: {app: mailpit}
+    spec:
+      nodeSelector: {aicc.io/role: platform}
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.27
+          ports:
+            - {name: smtp, containerPort: 1025}
+            - {name: ui, containerPort: 8025}
+          readinessProbe:
+            httpGet: {path: /readyz, port: ui}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}

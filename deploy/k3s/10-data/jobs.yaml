@@ -1,0 +1,82 @@
+# One-shot setup, idempotent, run on every deploy (k8s's answer to compose's
+# one-shot services). No start order in kubernetes: while its database is not
+# up yet a Job just fails, and backoffLimit retries it (10 s, 20 s, 40 s...).
+# Jobs cannot be changed once created; ttlSecondsAfterFinished deletes a
+# finished one, so the next `kubectl apply` creates and runs it again.
+
+# voice_reader: the read-only role the orchestrator and knowledge use.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-grants
+spec:
+  backoffLimit: 8
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector: {aicc.io/role: voice}
+      securityContext:
+        runAsUser: 999          # postgres, as a number: runAsNonRoot cannot check a name
+        runAsGroup: 999
+        runAsNonRoot: true
+      containers:
+        - name: grants
+          image: aicc/postgres
+          command: ["psql", "--no-psqlrc", "--quiet", "-f", "/grants/grants.sql"]
+          env:
+            - {name: PGHOST, value: postgres}
+            - {name: PGDATABASE, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: PGUSER, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_USER}}}
+            - {name: PGPASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_PASSWORD}}}
+            - {name: VOICE_READER_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: VOICE_READER_PASSWORD}}}
+          volumeMounts:
+            - {name: grants, mountPath: /grants}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: grants
+          configMap: {name: db-grants}
+---
+# documents_app: the documents service's own MongoDB user (readWrite, one database).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongo-setup
+spec:
+  backoffLimit: 8
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector: {aicc.io/role: platform}
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+      containers:
+        - name: setup
+          image: aicc/mongo
+          # A shell only so the root password comes from the environment, not argv.
+          command:
+            - sh
+            - -c
+            - >-
+              exec mongosh --host mongo --quiet --authenticationDatabase admin
+              --username "$MONGO_ROOT_USER" --password "$MONGO_ROOT_PASSWORD"
+              /setup/mongo-setup.js
+          env:
+            - {name: MONGO_ROOT_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_ROOT_USER}}}
+            - {name: MONGO_ROOT_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_ROOT_PASSWORD}}}
+            - {name: APP_DB, value: documents}
+            - {name: APP_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_USER}}}
+            - {name: APP_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: MONGO_APP_PASSWORD}}}
+          volumeMounts:
+            - {name: setup, mountPath: /setup}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: setup
+          configMap: {name: mongo-setup}

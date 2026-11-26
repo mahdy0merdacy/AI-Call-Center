@@ -1,0 +1,6 @@
+# Everything of the core stack lives here: `kubectl -n aicc ...`, and
+# `kubectl delete ns aicc` removes it all (PVC data included).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aicc

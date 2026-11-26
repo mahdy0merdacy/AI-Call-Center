@@ -1,0 +1,69 @@
+# Layer 40: the data stack on predator (namespace aicc-data). Same services,
+# names and settings as data/docker-compose.yml, so its code runs unchanged.
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/40-data | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc-data
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-data}
+
+resources:
+  - namespace.yaml
+  - kafka.yaml
+  - postgres.yaml
+  - seaweedfs.yaml
+  - spark.yaml
+  - airflow.yaml
+  - jobs.yaml
+
+# Dev credentials: the same defaults data/docker-compose.yml uses (and that
+# data/postgres/init/*.sql hard-codes), so nothing secret is added to git here.
+secretGenerator:
+  - name: data-env
+    literals:
+      - POSTGRES_PASSWORD=postgres
+      - AIRFLOW_DB_PASSWORD=airflow
+      - S3_ACCESS_KEY=lake
+      - S3_SECRET_KEY=lake-secret-key
+      - PII_PEPPER=dev-pepper-change-me
+    options: {disableNameSuffixHash: true}
+  - name: seaweedfs-s3
+    files: [s3.json=../../../data/seaweedfs/s3.json]
+    options: {disableNameSuffixHash: true}
+
+# Code and config the data stack reads, straight from the repo. Hashed names:
+# editing a DAG or a job rolls Airflow out with the new files.
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - ../../../data/postgres/init/01-roles-and-databases.sql
+      - ../../../data/postgres/init/02-aicc.sql
+  - name: airflow-dags
+    files: [../../../data/airflow/dags/lake_pipeline.py]
+  - name: spark-jobs
+    files:
+      - ../../../data/spark/jobs/bronze_call_events.py
+      - ../../../data/spark/jobs/silver_calls.py
+      - ../../../data/spark/jobs/gold_tenant_daily.py
+      - ../../../data/spark/jobs/peek_bronze.py
+  - name: quality-code
+    files:
+      - ../../../data/quality/lake.py
+      - ../../../data/quality/suites.py
+      - ../../../data/quality/run.py
+  # events.desc is binary: kustomize stores it as binaryData.
+  - name: event-schema
+    files:
+      - ../../../data/gen/events.desc
+      - ../../../data/gen/aicallcenter/events/v1/events_pb2.py
+      - ../../../data/proto/aicallcenter/events/v1/events.proto
+      - ../../../data/kafka/register_schemas.py
+  - name: tenants
+    files:
+      - ../../../tenants/acme-delivery.yaml
+      - ../../../tenants/swiftnet-isp.yaml
+      - ../../../tenants/maison-verte.yaml
+
+images:
+  - {name: aicc/spark, newName: 100.72.101.66:5001/aicc/spark, newTag: 8b85f4f}
+  - {name: aicc/airflow, newName: 100.72.101.66:5001/aicc/airflow, newTag: 8b85f4f}

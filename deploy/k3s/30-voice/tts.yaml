@@ -1,0 +1,59 @@
+# Magpie TTS (nemo-speech) on the GPU, shared with STT. Imported image.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tts
+spec:
+  selector: {app: tts}
+  ports:
+    - {name: http, port: 8083}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tts
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: tts}
+  template:
+    metadata:
+      labels: {app: tts}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      runtimeClassName: nvidia
+      # nemo-speech writes a .lock beside each model, and the cache folder is
+      # yours (uid 1000), as in compose. On a shared cluster: a PVC filled by an
+      # init container as 10001 instead.
+      securityContext: {runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true}
+      containers:
+        - name: tts
+          image: aicc/tts:dev
+          imagePullPolicy: Never
+          env:
+            - {name: NVIDIA_VISIBLE_DEVICES, value: all}
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility"}
+          ports:
+            - {name: http, containerPort: 8083}
+          volumeMounts:
+            - {name: models, mountPath: /models/nemo-speech}
+          startupProbe:
+            httpGet: {path: /ready, port: http}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 3Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: models
+          hostPath: {path: /home/mahdousha/.cache/nemo-speech/models, type: Directory}

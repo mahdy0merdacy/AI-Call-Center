@@ -1,0 +1,34 @@
+# Layer 50: Souha's sentiment service on predator (namespace aicc-data, next to
+# Kafka). Two steps:
+#   1. train.yaml   a Job on predator's GPU: synthetic data -> fine-tuned
+#                   xlm-roberta-base, written to the sentiment-models volume
+#   2. worker.yaml  the Kafka worker: calls.events.v1 -> calls.sentiment.v1,
+#                   loading the newest model from that same volume
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k3s/50-sentiment | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aicc-data
+labels:
+  - pairs: {app.kubernetes.io/part-of: aicc-data}
+
+resources:
+  - models.yaml
+  - train.yaml
+  - worker.yaml
+
+# The training code, straight from services/sentiment (the image is a stock
+# PyTorch one: training needs CUDA torch, the worker image has CPU torch).
+configMapGenerator:
+  - name: sentiment-train-scripts
+    files:
+      - ../../../services/sentiment/scripts/synth_data.py
+      - ../../../services/sentiment/scripts/templates_extra.py
+      - ../../../services/sentiment/scripts/train.py
+  - name: sentiment-train-app
+    files:
+      - ../../../services/sentiment/app/__init__.py
+      - ../../../services/sentiment/app/emotions.py
+      - ../../../services/sentiment/app/schema.py
+
+images:
+  - {name: aicc/sentiment, newName: 100.72.101.66:5001/aicc/sentiment, newTag: 8b85f4f}

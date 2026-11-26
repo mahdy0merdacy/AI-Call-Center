@@ -1,0 +1,63 @@
+# The lake's object store: S3 API on 8333, bucket `lake`, Delta tables inside.
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+spec:
+  selector: {app: seaweedfs}
+  ports:
+    - {name: s3, port: 8333}
+    - {name: master, port: 9333}
+    - {name: master-grpc, port: 19333}
+    - {name: volume, port: 8080}
+    - {name: volume-grpc, port: 18080}
+    - {name: filer, port: 8888}
+    - {name: filer-grpc, port: 18888}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: seaweedfs
+spec:
+  serviceName: seaweedfs
+  replicas: 1
+  selector:
+    matchLabels: {app: seaweedfs}
+  template:
+    metadata:
+      labels: {app: seaweedfs}
+    spec:
+      nodeSelector: {aicc.io/role: llm}
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs:4.00
+          # -ip=seaweedfs: the address the master hands out for its volume
+          # server; the Service name, so it resolves from every pod.
+          args: ["server", "-dir=/data", "-ip=seaweedfs", "-ip.bind=0.0.0.0",
+                 "-master.volumeSizeLimitMB=1024", "-volume.max=50",
+                 "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+          ports:
+            - {name: s3, containerPort: 8333}
+            - {name: master, containerPort: 9333}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: s3, mountPath: /etc/seaweedfs, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /cluster/status, port: master}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: s3}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: s3
+          secret: {secretName: seaweedfs-s3}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: {requests: {storage: 20Gi}}

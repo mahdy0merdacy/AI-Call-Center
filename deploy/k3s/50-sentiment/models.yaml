@@ -1,0 +1,10 @@
+# Trained models, one folder per version: <yyyymmdd-hhmm>/model. Written by the
+# training Job, read by the worker; both run on predator (ReadWriteOnce = one node).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentiment-models
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: {requests: {storage: 10Gi}}

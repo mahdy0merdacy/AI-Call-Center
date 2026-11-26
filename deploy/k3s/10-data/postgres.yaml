@@ -1,0 +1,62 @@
+# Postgres + pgvector: the portal's database, tenant identities and document
+# chunks. On the voice node, because every call turn searches it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  clusterIP: None            # headless: "postgres" resolves straight to postgres-0
+  selector: {app: postgres}
+  ports:
+    - {name: postgres, port: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      nodeSelector: {aicc.io/role: voice}
+      securityContext:
+        fsGroup: 999           # the image's postgres group owns the data folder
+      containers:
+        - name: postgres
+          image: aicc/postgres  # pgvector/pg16 + the portal's schema (init SQL)
+          env:
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_DB}}}
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_USER}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: aicc-core, key: POSTGRES_PASSWORD}}}
+            # A subfolder: the volume's root is not an empty folder Postgres may own.
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+          # Over TCP: while the init SQL runs, Postgres listens on its socket only.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: {port: postgres}
+            initialDelaySeconds: 60   # first start runs the init SQL
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests: {storage: 5Gi}
