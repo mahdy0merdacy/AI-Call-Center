@@ -92,6 +92,16 @@ spec:
     targetRevision: feat/k3s-deploy
     path: deploy/k3s/50-sentiment
   destination: {server: https://kubernetes.default.svc, namespace: aicc-data}
+  # sentiment-train is a Job: its pod template cannot change once created, and
+  # retraining (10-20 min of GPU) is done on purpose, not on every sync
+  # (delete the Job, then sync). So Argo CD keeps the live template as it is.
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      name: sentiment-train
+      jsonPointers: [/spec/template, /spec/selector]
+  syncPolicy:
+    syncOptions: [RespectIgnoreDifferences=true]
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
