@@ -1,0 +1,107 @@
+# One Argo CD Application per kustomize layer: the same folders, in the same
+# order, as the manual `kubectl kustomize ... | kubectl apply -f -`.
+#   kubectl apply -f deploy/argocd/applications.yaml
+#
+# Manual sync: Argo CD shows what differs between git and the cluster, and a
+# person presses Sync. (Automatic sync, prune and self-heal come later, once CI
+# builds the images and bumps the tags.)
+#
+# Not managed here, on purpose:
+#   deploy/k3s/tools/    populate-history must run ONCE (a rerun duplicates a
+#                        month of calls); prepull is a one-off.
+#   deploy/k3s/60-llm/   not deployed (the LLM is Groq).
+#   Secrets made by scripts/k3s-secrets.sh or by hand: not in git, so Argo CD
+#                        neither creates nor deletes them.
+#
+# targetRevision: the branch Argo CD follows. feat/k3s-deploy until it is
+# merged, then main.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-00-base
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/00-base
+  destination: {server: https://kubernetes.default.svc}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-10-data
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/10-data
+  destination: {server: https://kubernetes.default.svc, namespace: aicc}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-20-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/20-platform
+  destination: {server: https://kubernetes.default.svc, namespace: aicc}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-30-voice
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/30-voice
+  destination: {server: https://kubernetes.default.svc, namespace: aicc}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-40-data
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/40-data
+  destination: {server: https://kubernetes.default.svc, namespace: aicc-data}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-50-sentiment
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/50-sentiment
+  destination: {server: https://kubernetes.default.svc, namespace: aicc-data}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aicc-60-insights
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/student-group213543/ai-call-center.git
+    targetRevision: feat/k3s-deploy
+    path: deploy/k3s/60-insights
+  destination: {server: https://kubernetes.default.svc, namespace: aicc-data}

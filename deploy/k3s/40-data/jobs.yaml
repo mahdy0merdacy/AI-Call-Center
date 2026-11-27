@@ -1,3 +1,6 @@
+# Under Argo CD: a PostSync hook. It runs after each sync, once everything
+# else in the layer is healthy (the database is up), and is replaced on the
+# next sync instead of showing as missing after ttlSecondsAfterFinished.
 # One-shot setup, idempotent (what data/setup.sh does in compose). Each fails
 # while its server is not up yet and backoffLimit retries it.
 
@@ -7,6 +10,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: kafka-topics
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 10
   ttlSecondsAfterFinished: 600
@@ -45,6 +51,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: kafka-schemas
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 10
   ttlSecondsAfterFinished: 600
@@ -68,6 +77,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: lake-bucket
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 10
   ttlSecondsAfterFinished: 600

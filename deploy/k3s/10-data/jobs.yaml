@@ -3,12 +3,18 @@
 # up yet a Job just fails, and backoffLimit retries it (10 s, 20 s, 40 s...).
 # Jobs cannot be changed once created; ttlSecondsAfterFinished deletes a
 # finished one, so the next `kubectl apply` creates and runs it again.
+# Under Argo CD: a PostSync hook. It runs after each sync, once everything
+# else in the layer is healthy (the database is up), and is replaced on the
+# next sync instead of showing as missing after ttlSecondsAfterFinished.
 
 # voice_reader: the read-only role the orchestrator and knowledge use.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: db-grants
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 8
   ttlSecondsAfterFinished: 600
@@ -44,6 +50,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: mongo-setup
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 8
   ttlSecondsAfterFinished: 600

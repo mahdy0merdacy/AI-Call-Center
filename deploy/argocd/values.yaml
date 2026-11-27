@@ -1,0 +1,55 @@
+# Argo CD, installed with its official Helm chart (scripts/argocd-setup.sh).
+# Helm installs the tool; Argo CD then deploys our own manifests (kustomize,
+# deploy/k3s) from git. Our layers stay plain kustomize: nothing is templated.
+#
+# UI: http://<any node IP>:30880   user admin, password:
+#   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+
+global:
+  # On the control plane, the node that is always up. Like CoreDNS: a GitOps
+  # controller on a laptop that sleeps would stop every deploy with it.
+  nodeSelector: {aicc.io/role: voice}
+
+configs:
+  params:
+    # Plain HTTP for the demo (no ingress, no certificate), like the portal.
+    server.insecure: true
+  cm:
+    # Our layers reuse files from elsewhere in the repo (../../../tenants, the
+    # data/ code): the same flag every `kubectl kustomize` here needs.
+    kustomize.buildOptions: --load-restrictor LoadRestrictionsNone
+    # How often Argo CD compares git with the cluster (default 3 min).
+    timeout.reconciliation: 180s
+
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30880
+    nodePortHttps: 30443
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+
+# Not used here: single sign-on (dex) and notifications. Fewer pods, less RAM.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+# Small requests: this is a 3-node demo cluster.
+controller:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+repoServer:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+redis:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 128Mi}
+applicationSet:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 128Mi}
